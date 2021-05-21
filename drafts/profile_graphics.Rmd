@@ -1,0 +1,518 @@
+---
+title: "Development of Code to Produce Depth Profile Graphics"
+author: "Curtis C. Bohlen, Casco Bay Estuary Partnership."
+date: "04/26/2021"
+output:
+  github_document:
+    toc: true
+    fig_width: 5
+    fig_height: 4
+---
+
+<img
+    src="https://www.cascobayestuary.org/wp-content/uploads/2014/04/logo_sm.jpg"
+    style="position:absolute;top:10px;right:50px;" />
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.align = 'center',
+                      fig.width = 5, fig.height = 4,
+                      collapse = TRUE, comment = "#>")
+```
+
+# Load libraries
+```{r}
+library(tidyverse)
+
+```
+
+# Load Data
+```{r}
+sonde_data <- read_csv('sonde_data.csv',
+                       col_types = cols(
+                         site_name = col_character(),
+                         site = col_character(),
+                         dt = col_date(format = ""),
+                         month = col_character(),
+                         year = col_double(),
+                         time = col_time(format = ""),
+                         hour = col_double(),
+                         depth = col_double(),
+                         temp = col_double(),
+                         salinity = col_double(),
+                         ph = col_double(),
+                         pctsat = col_double(),
+                         do = col_double(),
+                         chl_a_sonde = col_double(),
+                         turbidity = col_double(),
+                         turbidity_cens = col_logical())) %>%
+              rename(sample_date = dt)
+```
+
+# Basic Graphics Data
+## Dissolved Oxygen Example
+One way that profiles can be reported is on a single panel, with separate
+profiles (from different dates) shown as separate lines on a graph.
+
+If we follow the usual convention of placing the depth value on the Y axis, with
+the water's surface symbolically up, we need to:  
+1.  Sort the data in order of depth;  
+2.  Use `geom_path()`;  
+3.  specify `scale_y_reverse()`; and  
+4.  Select a format for the dates. 
+
+Otherwise, this is a fairly simple graphic format, and arguably not worth the 
+effort to draft a function to encapsulate.
+```{r}
+sonde_data %>%
+  filter(site == 'FR09', year == 2018) %>%
+  arrange(sample_date, depth) %>% 
+  mutate(txt_date = format(sample_date, format = '%m/%d')) %>%
+ggplot(aes(do, depth, color = factor(txt_date))) +
+  geom_path() +
+   scale_y_reverse() +
+  scale_color_discrete(name = '') +
+  theme_minimal() +
+  ylab('Depth (m)') +
+  xlab('')
+```
+
+## Temperature Example
+One might also want a plot that shows observed "profile" values, symbolized by
+color, against a grid of dates and depths.  
+
+Again, a plot like this practically writes itself in `ggplot2`.  The key
+decisions are largely aesthetic, and no different than for any other point plot.
+A special purpose function could save a bit of coding by encapsulating 
+intelligent defaults, but it won't (and should not) alter the basic issues
+faced by a designer.  Two issues -- point design and color pallete are
+especially important.  
+
+I like the look of filled point symbols in this setting. I think it makes it a 
+little easier to judge relative color saturation.  But this palette is 
+probably not adequately colorblind friendly.
+
+```{r}
+sonde_data %>%
+  filter(site == 'FR09', year == 2018) %>%
+ggplot(aes(sample_date, depth, fill = temp)) +
+  geom_point(size = 4, shape = 21, color = 'grey50') +
+  # scale_fill_gradient2( name = 'Temperature (C)',
+  #                       midpoint = 15, 
+  #                       high = scales::muted("red"), 
+  #                       mid = 'grey95',
+  #                       low = scales::muted("blue")) +
+  scale_fill_distiller(name = 'Temperature (C)', 
+                       type = 'div',
+                       palette = 'RdBu') +
+  
+  theme_minimal() +
+  ylab('Depth (m)') +
+  xlab('') +
+   
+  scale_y_reverse() +
+  
+  theme(legend.position = 'bottom',
+        legend.title = element_text(size = 12),
+        legend.text =  element_text(size = 9),
+        axis.ticks.length.x = unit(0, 'in')) +
+  guides(fill = guide_colourbar(title.position="top", barheight = .5))
+```
+
+# Towards a Depth-Time Plot
+Often, however, depth-time or profile data is interpolated behind the scenes to 
+generate a smoothed plot that arguably helps spot patterns, at the cost of 
+perhaps misleading the viewer into thinking you have more data than you actually
+do.
+
+The `ggplot2` functions that create two dimensional graphs of three dimensional
+data are somewhat confusing to work with.  They generally require a regularly 
+spaced "grid" of x and y values.  Different functions that superficially do 
+similar things expect different aesthetics.
+
+So, to create a depth-time plot smoothed in both directions (dates and depths),
+we need to interpolate from the data to produce equally spaced values. 
+
+There is a nice write-up of the logic with simple R code on Dewey Dunnington's 
+[fishandwhistle.net blog](https://fishandwhistle.net/post/2019/depth-time-heatmaps/).
+
+Here, I am headed towards a simple R package, which means I need to be a bit 
+more careful about encapsulating the code in reusable pieces.
+
+# Interpolation
+R includes a linear  interpolation function, `approx()`.  It takes vector values
+for x and y, and a vector of desired locations (x values) for the estimates. It
+returns a list with `x` and `y` components.  Dunnington used this function in
+his blog, and it is a reasonable first order choice.
+
+We use it here as well.
+
+But linear interpolation is just one of quite a few possible approaches to take. 
+Many potential smoothers exist in the R universe, including splines, lowess and
+gam smoothers.  Any of these could be used to generate estimated values where
+data is absent.
+
+Formal GAM modeling has the advantage of providing a ready way to fit a two 
+dimensional smooth, with independent control of intensity of smoothing along two 
+axes.  However, GAM smoothers will always "underfit" extreme values.
+
+# Basic Logic
+We can demonstrate the logic of interpolation in one dimension by interpolating 
+temperature data along each depth profiles.  
+
+Limnological or oceanographic data are sometimes collected at (nominally) 
+discrete depths, with the same depths used for all vertical profiles. This is
+especially common for data based on discrete samples collected at depth. 
+However, since the advent of automated "CTD" sensors, "sondes" and data loggers, 
+data is  just as likely to be collected at regular time intervals, producing 
+irregular depths that will vary from sampling event to sampling event.
+
+Interpolation along depths can make data from subsequent sampling events easier
+to compare. Although care must be taken to evaluate whether rapid changes in 
+environmental parameters with depth could be obscured, or thin layers with 
+distinct chemical, biological, or optical properties missed. This is likely to 
+be a significant  problem with data from stratified waters, including 
+high latitude lakes, meromictic lakes, and estuaries.
+
+```{r}
+tmp <- sonde_data %>% 
+  select(site, sample_date, depth, month, year, temp) %>%
+  filter(site == 'FR09', year == 2018, month == 'Jul')
+interp <- as_tibble(approx(tmp$depth, tmp$temp, seq(0, 13, by = 0.25 )))
+interp
+```
+
+Note that here we are predicting TEMPERATURE based on DEPTH, so the default 
+names `x` and `y` are reversed compared to how these values are usually plotted,
+with depth along the Y axis.
+
+```{r}
+ggplot(tmp, aes(temp, depth)) +
+  geom_point(size = 3) +
+  geom_point(mapping = aes(y,x), data = interp, shape = 3) +
+  scale_y_reverse() +
+  ylab('Depth (m)') +
+  xlab('Temperature (C)')
+rm(tmp, interp)
+```
+
+### Interpolation Function
+We need a function that can interpolate from the surface (depth = 0) to
+maximum depth.  This is just a thin wrapper around `approx` that handles 
+a little housekeeping setting up a grid over which we want predictions, if one
+is not provided in the call.
+
+The parameter names `.dep`, `.ind`, and `grid` are mnemonics, to remind you that 
+the function will estimate the dependent variable `.dep` at the value of `.grid`
+based on the [`.ind`, `.dep`] pairs.  `.grid` helps remind you of the intent
+of the function to provide values at equally spaced values. `.res` provides
+an alternative 
+
+I avoided using ".x" or ".y", or alternatively ".depth" and ".date" because
+this is a more general function.  For the same reason, I omit tests for
+positive depths.  Who knows how this will get used.
+
+If we want to generalize to use more sophisticated smoothers, this is the 
+function we would need to modify, presumably by passing an expression for 
+an alternate smoother or assembling a all from a function name and list of 
+parameters.
+
+The primary differences between this code and the code in Dunnington's blog
+reflects checking assumptions about arguments and providing more flexibility.
+```{r}
+interpol <- function(.ind, .dep, .grid = NA, .res = NA,
+                     name = 'Interpol', ...) {
+  # Check parameters
+  stopifnot(is.numeric(.ind), is.numeric(.dep))
+  stopifnot((! is.na(.grid )) | (! is.na(.resolution)))
+  
+  # We want to capture extra arguments to pass on to `approx()`
+  # or eventually, other smoothers.
+  
+  extra_args = list2(...)
+
+  
+  # We pass ggrid to the `xout` parameter of `approx()`
+  # so passing ont to this function is an error.
+  if ( 'xout' %in% extra_args | 'n' %in% extra_args) {
+    stop("An `xout` or `n` parameter was found.  Specify the locations or ",
+         "resolution of interpolated values with `.grid` or `.res`.")
+  }
+  
+ # For `approx()`
+
+  allowed_args <-c( 'method',   # c("linear","constant")
+                    'yleft',    # What to return below lowest .inf?
+                    'yright',   # what to return above highest .ind
+                    'rule',     # What rule to apply to define values outside?
+                                # 1 = NAs, 2 = extrema. Ialternative)
+                    'f',        # a factor that indicated where between to adjacent values 
+                    'ties',
+                    'na.rm' )
+extra_args <- extra_args[extra_args %in% allowed_args]
+  
+  # What is maximum depth for the interpolation?
+  max.ind = max(ind, na.rm = TRUE)
+  
+  # Round max depth up to a whole number for interpolation
+  # this matters little with `approx()` since it will never provide a 
+  # value outside the range of original data.
+  if ( ! abs((max.ind - round(max.ind)) < 0.001))
+    max.ind <- ceiling(max.ind)
+  
+  # If the function did not 
+  if (missing(.grid)) {
+    ggrid = seq(0, max.ind, by = .res)
+  }
+  else {
+    ggrid = .grid
+  }
+  
+  vals <- as.tibble(approx(ddepth, vvalue, ggrid)) %>%
+    rename(depth = x, value = y) %>%
+    mutate(id = name) %>%
+    relocate(id)
+  return(vals)
+}
+```
+
+```{r}
+tmp <- sonde_data %>% 
+  select(site, sample_date, depth, month, year, temp) %>%
+  filter(site == 'FR09', year == 2018, month == 'Jul')
+interp <- interpol(tmp$depth, tmp$temp, resolution = 0.5)
+
+ggplot(tmp, aes(temp, depth)) +
+  geom_point(col = cbep_colors()[5], size = 3) +
+  geom_point(mapping = aes(value, depth), data = interp, shape = 3) +
+  scale_y_reverse() +
+  ggtitle('Fore River Site 09, July 2018')
+rm(tmp, interp)
+```
+
+### Apply to Multiple Dates 
+With an interpolation function available, we need to roll that into a function
+that will correctly interpolate with dates, but not across dates when data was 
+collected.  Much of this code allows integration into a typical `tidyverse`
+workflow, and provides a few simple parameter validation checks.
+
+```{r}
+all_dates_interp <- function(.dt, .thedate, .depth, .value,
+                             name = '', resolution = 0.5) {
+  
+  # These are ugly argument checks, since they don't provide nice error messages.
+  stopifnot(is.data.frame(.dt))
+  stopifnot(length(resolution) == 1)
+
+  ddate  <- as.character(ensym(.thedate))
+  ddepth <- as.character(ensym(.depth))
+  vvalue <- as.character(ensym(.value))
+  
+  # ddate  <-  rlang::as_name(.thedate)
+  # ddepth <-  rlang::as_name(.depth)
+  # vvalue <-  rlang::as_name(.value)
+  
+  # Check that these are data names from the data frame
+  
+  stopifnot(ddate %in% names(.dt))
+  stopifnot(ddepth %in% names(.dt))  
+  stopifnot(vvalue %in% names(.dt))  
+
+  # Create internal dataframe
+  # This is wasteful of memory for large data sets but simplifies coding.
+  df <- tibble(the_date = .dt[[ddate]], 
+               dpth = .dt[[ddepth]],
+               val = .dt[[vvalue]])
+  
+  # establish the grid for all dates, despite tides, etc.
+  # Since we are headed for a single plot, we set limits for 
+  # depth based on the deepest observations from any date.
+  # `approx()` will give NA outside the range of observations.
+  
+  max_dpth <- max(df$dpth)
+  # Round max depth up to a whole number for interpolation
+  max_dpth <- if_else( (abs(max_dpth - round(max_dpth)) < 0.001),
+                      max_dpth, 
+                      round(max_dpth + 0.5))
+  grid = seq(0, max_dpth, resolution)
+  
+  # now, we work through each date.  This returns a dataframe for each date.
+  # note that we use the `name` parameter to the interpol function to remember
+  # the date for each data set.
+  res <- df %>%
+    group_by(the_date) %>%
+    nest() %>%
+    mutate(res = map(data, function(dat) interpol(dat$dpth, dat$val,
+                                                  .grid = grid,
+                                                  name = the_date)))
+  # And we use `reduce()` and `bind_rows()` to combine them to one dataframe
+  r = reduce(res$res, bind_rows)
+  return(r)
+}
+```
+
+```{r}
+tmp <- sonde_data %>% 
+  select(site, sample_date, depth, month, year, temp) %>%
+  filter(site == 'FR09', year == 2018)
+
+test <- all_dates_interp(tmp, sample_date, depth, temp, resolution = 0.5)
+```
+
+```{r}
+ggplot(test, aes(id, depth, color = value)) +
+  geom_point(size = 3) +
+  scale_y_reverse() +
+  scale_color_gradient2(name = 'Temperature (C)', 
+                        midpoint = 15, 
+                         high = scales::muted("red"), 
+                         low = scales::muted("blue"), na.value = 'white') +
+  ylab('Depth (m)') +
+  xlab('Date') +
+  theme_cbep(base_size = 12) +
+  
+  theme(legend.position = 'bottom',
+        legend.title = element_text(size = 12),
+        legend.text =  element_text(size = 9),
+        axis.ticks.length.x = unit(0, 'in')) +
+  guides(color = guide_colourbar(title.position="top", barheight = .5))
+```
+
+## Dates
+We can use essentially the same logic to interpolate by dates.
+
+We assume this function is being passed a dataframe with three items:
+dates, depths and values.  It has already gone through interpolation by depth,
+so it has regularly 
+
+It will return a (larger) dataframe that fills in
+values between observations.
+
+### Interpolation Function
+We break out a function to generate a tibble for one depth at a time
+```{r}
+interpol_dates <- function(.dts, .value, .grid = NA, resolution = 5,
+                     .id = '') {
+  #browser()
+  ddate = .dts[! is.na(.dts) & ! is.na(.value)]
+  vvalue = .value[! is.na(.dts) & ! is.na(.value)]
+  
+  
+  if (sum(! is.na(vvalue)) > 1) {   # We have some actual data....
+    # Establish the grid
+    first = min(ddate)
+    last =  max(ddate)
+    if (missing(.grid)) {
+      ggrid = seq(first, last, by = resolution)
+    }
+    else {
+      ggrid = .grid
+    }
+    vals <- as_tibble(approx(ddate, vvalue, ggrid)) %>%
+      rename(i_date = x, value = y) %>%
+      mutate(id = .id) %>%
+      relocate(id) }
+  else {
+    vals <- tibble(i_date = sort(unique(.dts)), value = NA_real_) %>%
+      mutate(id = .id) %>%
+      relocate(id) }
+  return(vals)
+}
+```
+
+```{r}
+tmp <- test %>% 
+  filter(depth == 1)
+# note the use of `min()` here is only to convert a vector to a single value so
+# it can be recycled.
+interp <- interpol_dates(tmp$id, tmp$value, .id = min(tmp$depth))
+
+ggplot(tmp, aes(id, value)) +
+  geom_point(col = cbep_colors()[5], size = 3) +
+  geom_point(mapping = aes(i_date, value), data = interp, shape = 3) +
+  ylab('Temperatur (C)') +
+  xlab('')
+```
+The abrupt change from increasing to decreasing temperatures on the August
+sample date is clearly problematic.  The alternative would be to use some sort
+of smoother to generate estimates instead of `approx()`.
+
+### Apply to Multiple Depths
+```{r}
+all_dates_fill <- function(.dt, .thedate, .depth, .value, resolution = 1) {
+  
+  # Read in names of variables 
+  ddate  <- as.character(ensym(.thedate))
+  ddepth <- as.character(ensym(.depth))
+  vvalue <- as.character(ensym(.value))
+  
+  # Check that these are data names from the data frame before we continue
+  stopifnot(ddate %in% names(.dt))
+  stopifnot(ddepth %in% names(.dt))  
+  stopifnot(vvalue %in% names(.dt))  
+  
+  # Create internal dataframe
+  # This is wasteful of memory for large data sets but simplifies coding
+  df <- tibble(the_date = .dt[[ddate]], 
+               depth = .dt[[ddepth]],
+               value = .dt[[vvalue]])
+  
+  # now, we work through each depth  This returns a dataframe for each date.
+  dff <- df %>%
+    group_by(depth) %>%
+    nest()
+  res <- dff %>%
+    mutate(res = map(data, function(dat)
+                           interpol_dates(dat$the_date, 
+                                          dat$value, resolution = 1,
+                                         .id = depth))) %>%
+    mutate(res = map(res, function(dat) rename(dat, depth = id)))
+   #browser()
+   rr <-  reduce(res$res, bind_rows)
+   return(rr)
+}
+```
+
+# Test
+```{r}
+tt <- all_dates_fill(test, id, depth, value, resolution = 5 )
+tt
+```
+
+
+scale_fill_gradient2('pi0', low = "blue", mid = "white", high = "red", midpoint = 0)
+
+to make plot colours directly comparable add consistent limits to each plot:
+
+scale_fill_gradient2('pi0', low = "blue", mid = "white", high = "red", midpoint = 0,
+
+
+# Preliminar Graphic Output
+```{r}
+tt %>%
+  filter(! is.na(value)) %>%
+
+ggplot(aes(i_date, depth, fill = value)) +
+  geom_tile() +
+  geom_point(data = test,
+             mapping = aes(id, depth, color = value), 
+             shape = 21, size = 1, color = 'grey45') +
+  scale_y_reverse() +
+  scale_fill_gradient2(name = 'Temperature (C)',
+    midpoint = 15, 
+    high = scales::muted("red"), 
+    low = scales::muted("blue"),
+    mid = 'gray95'
+  ) +
+  ylab('') +
+  xlab('') +
+  theme_cbep(base_size = 12) +
+  #coord_cartesian(expand = FALSE) +
+  
+  theme(legend.position = 'bottom',
+        legend.title = element_text(size = 12),
+        legend.text =  element_text(size = 10),
+        axis.ticks.length.x = unit(0, 'in')) +
+  guides(fill = guide_colourbar(title.position="top", barheight = .5))
+```
+
+

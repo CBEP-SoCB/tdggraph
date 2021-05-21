@@ -1,0 +1,54 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+df <- data.frame(x = (3:12) * 5,
+             y = c((1:6) , (5:2)))
+             
+test <- approx(df$x, df$y, seq(1, 50, by = 0.5))
+
+```
+
+```{r}
+plot(df$x, df$y)
+points(test$x, test$y, col ='red', cex = 0.5)
+```
+
+
+# Alternate Rules for outside of data
+```{r}
+test <- approx(df$x, df$y, seq(1, 50, by = 0.5), rule = 2)
+
+plot(df$x, df$y)
+points(test$x, test$y, col ='red', cex = 0.5)
+```
+
+```{r}
+test <- approx(df$x, df$y, seq(1, 50, by = 0.5), yleft = 2)
+
+plot(df$x, df$y)
+points(test$x, test$y, col ='red', cex = 0.5)
+```
+
+
+# Method = 'Constant'
+```{r}
+test <- approx(df$x, df$y, seq(1, 50, by = 0.5), method = 'constant', f = 0)
+
+plot(df$x, df$y)
+points(test$x, test$y, col ='red', cex = 0.5)
+```
+
+```{r}
+test <- approx(df$x, df$y, seq(1, 50, by = 0.5), method = 'constant', f = .5)
+
+plot(df$x, df$y)
+points(test$x, test$y, col ='red', cex = 0.5)
+```
+```
+
+
+
