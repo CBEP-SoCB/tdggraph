@@ -1,0 +1,28 @@
+Package: tdggraph
+Title: Simple ggplot2 graphics for depth profiles in limnology and oceanography
+Version: 0.0.0.9000
+Authors@R: 
+    person(given = "Curtis",
+           family = "Bohlen",
+           role = c("aut", "cre"),
+           email = "curtis.bohlen@maine.edu")
+Description: Limnology and oceanography frequently collect data along vertical
+    profiles from the water's surface to depth. `tdggraph` provides functions
+    built on `ggplot2` to produce graphics that handle profile data sets, 
+    especially depth profile data collected repeatedly at the same location.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.1.1
+Depends:
+    ggplot2,
+    R (>= 2.10)
+Imports:
+    tibble,
+    rlang,
+    dplyr,
+    magrittr
+Suggests: 
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3

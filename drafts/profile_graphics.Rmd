@@ -1,7 +1,7 @@
 ---
 title: "Development of Code to Produce Depth Profile Graphics"
 author: "Curtis C. Bohlen, Casco Bay Estuary Partnership."
-date: "04/26/2021"
+date: "05/20/2021"
 output:
   github_document:
     toc: true
@@ -22,7 +22,7 @@ knitr::opts_chunk$set(fig.align = 'center',
 # Load libraries
 ```{r}
 library(tidyverse)
-
+library(rlang)
 ```
 
 # Load Data
@@ -48,7 +48,7 @@ sonde_data <- read_csv('sonde_data.csv',
               rename(sample_date = dt)
 ```
 
-# Basic Graphics Data
+# Basic Graphics Concepts
 ## Dissolved Oxygen Example
 One way that profiles can be reported is on a single panel, with separate
 profiles (from different dates) shown as separate lines on a graph.
@@ -76,6 +76,94 @@ ggplot(aes(do, depth, color = factor(txt_date))) +
   xlab('')
 ```
 
+### Draft `ptlines()` Function
+We create a simple function to recreate a graph showing depth profiles.  The 
+function does nothing that can' be done with a couple of lines of `ggplot2`
+code.  It is of little real value, except as a platform to develop programming 
+parameter passing and error conventions for the package via a very simple 
+example.
+
+We include r's dots here in the function definition.  It's not yet clear how
+dots would be used. Most modifications of the graphics can occur in a `ggplot2`
+workflow.
+
+From a design point of view, we need to decide whether to send dots on to
+`ggplot()`, `aes()` or `geom_path()`.  We make the decision that the most likely 
+use would be to pass additional aesthetics of descriptors into the geom.
+
+Another design issue is whether we want to allow a call without a color
+parameter, and if so whether we need a group parameter -- but at that point the
+function is getting too complex for an intial draft of a package.
+```{r}
+ptlines <- function(.dt, .x, .y, .val, ...) {
+  # These are ugly argument checks, since they don't provide error messages.
+  stopifnot(is.data.frame(.dt))
+  
+  # We want to be able to accept arguments as unquoted names, quoted names,
+  # or expressions that evaluate to either. 
+  ind <- ensym(.x)
+  dep <- ensym(.y)
+  col = ensym(.val)
+  
+  # Check that these are data names from the data frame
+  # These are not strictly necessary, as other errors will be triggered if we
+  # don't catch catch this here.  The main value of an explicit error check
+  # may be to prevent inadvertant pulling in data from the calling environment
+  # rather than the dat parameter.
+  # Do we even what to make this check?  Will it block certain use styles where 
+  # the user is passing data assembled outside of the dataframe for one or more
+  # of the parameters? Should we be checking lengths and types instead?
+  
+  # stopifnot(as_string(ind) %in% names(.dt))
+  # stopifnot(as_string(dep) %in% names(.dt))
+  # stopifnot(as_string(col) %in% names(.dt))
+
+ggplot(data = NULL, aes(eval_tidy(ind, .dt), 
+           eval_tidy(dep, .dt), 
+           color = eval_tidy(col, .dt))) +
+  geom_path(...) +
+  labs(x = as_string(ind), y = as_string(dep), color = as_string(col)) +
+  scale_y_reverse()
+}
+```
+
+
+Note that this function can fit into a typical `tidyverse` `ggplot2` workflow.
+```{r}
+tmp <- sonde_data %>%
+  filter(site == 'FR09', year == 2018) %>%
+  arrange(sample_date, depth) %>% 
+  mutate(txt_date = format(sample_date, format = '%m/%d')) %>%
+  mutate(txt_date = factor(txt_date))
+
+ptlines(tmp, do, depth, txt_date) +
+  theme_minimal()
+```
+
+We can pass additional aesthetic parameters to modify the lines.
+```{r}
+ptlines(tmp, do, depth, txt_date, lty = 3, size = 1) +
+  theme_minimal() +
+  scale_color_discrete(name = '')
+```
+
+Error messages are fairly informative even without special handling.
+```{r error = TRUE}
+ptlines(tmp, do, bicycle, txt_date) +
+  theme_minimal() +
+  scale_color_discrete(name = '')
+```
+
+But if we pull in a symbol from the calling environment, the error is less 
+informative.  This error is triggered a couple of function calls down, in
+the `scale_y_reversed()` call.
+```{r error = TRUE}
+bicycle <- 'two wheels'
+ptlines(tmp, do, bicycle, txt_date) +
+  theme_minimal() +
+  scale_color_discrete(name = '')
+```
+
 ## Temperature Example
 One might also want a plot that shows observed "profile" values, symbolized by
 color, against a grid of dates and depths.  
@@ -84,23 +172,14 @@ Again, a plot like this practically writes itself in `ggplot2`.  The key
 decisions are largely aesthetic, and no different than for any other point plot.
 A special purpose function could save a bit of coding by encapsulating 
 intelligent defaults, but it won't (and should not) alter the basic issues
-faced by a designer.  Two issues -- point design and color pallete are
+faced by a designer.  Two issues -- point design and color palette are
 especially important.  
-
-I like the look of filled point symbols in this setting. I think it makes it a 
-little easier to judge relative color saturation.  But this palette is 
-probably not adequately colorblind friendly.
 
 ```{r}
 sonde_data %>%
   filter(site == 'FR09', year == 2018) %>%
 ggplot(aes(sample_date, depth, fill = temp)) +
   geom_point(size = 4, shape = 21, color = 'grey50') +
-  # scale_fill_gradient2( name = 'Temperature (C)',
-  #                       midpoint = 15, 
-  #                       high = scales::muted("red"), 
-  #                       mid = 'grey95',
-  #                       low = scales::muted("blue")) +
   scale_fill_distiller(name = 'Temperature (C)', 
                        type = 'div',
                        palette = 'RdBu') +
@@ -118,16 +197,75 @@ ggplot(aes(sample_date, depth, fill = temp)) +
   guides(fill = guide_colourbar(title.position="top", barheight = .5))
 ```
 
+### Draft `ptdots()` Function
+This is largely identical to the previous function, with different
+symbolization.
+
+From a design point of view, however, there are a few more issues to address.
+We again pass dots through the the main geom, but this function will almost
+always need a custom color scale. We may eventually want to add function
+parameters for the color scales, with an intelligent default.
+
+
+```{r}
+ptdots<- function(.dt, .x, .y, .val, ...) {
+  # These are ugly argument checks, since they don't provide error messages.
+  stopifnot(is.data.frame(.dt))
+  
+  # We want to be able to accept arguments as unquoted names, quoted names,
+  # or expressions that evaluate to either. 
+  ind <- ensym(.x)
+  dep <- ensym(.y)
+  col = ensym(.val)
+
+ggplot(data = NULL,
+       aes(x = eval_tidy(ind, .dt), 
+           y = eval_tidy(dep, .dt), 
+           color = eval_tidy(col, .dt))) +
+  geom_point(...) +
+  labs(x = as_string(ind), y = as_string(dep), color = as_string(col)) +
+  scale_y_reverse()
+}
+```
+
+```{r}
+tmp <- sonde_data %>%
+  filter(site == 'FR09', year == 2019) %>%
+  arrange(sample_date, depth)
+
+ptdots(tmp, sample_date, depth, temp, size = 3)
+```
+
+I like the look of filled point symbols in this setting. We might want to
+be able to pass color or fill aesthetics in the original function call. A work 
+around for now is to handle this via parameters passed through to 
+`geom_point()`.  Note that this overrides the default aesthetic assignments.
+
+Notice also that `ptdots()` does not know to look for `temp` in the source
+dataframe, so it needs to be specified explicitly.  Presumably this could be 
+corrected by capturing the call and evaluating all arguments (not just the
+three required ones) in the context of the data parameter. We do not tackle that
+here.
+```{r}
+ptdots(tmp, sample_date, depth, do, 
+       shape = 21, aes(fill = tmp$temp), col = 'grey50',
+       size = 3,) +
+  scale_fill_distiller(name = 'Temperature (C)', 
+                       type = 'div',
+                       palette = 'RdBu')
+```
+
 # Towards a Depth-Time Plot
-Often, however, depth-time or profile data is interpolated behind the scenes to 
-generate a smoothed plot that arguably helps spot patterns, at the cost of 
-perhaps misleading the viewer into thinking you have more data than you actually
-do.
+Often,  profile-time data is interpolated to generate a smoothed plot. The
+smoothed plot looks great, and also helps reveal patterns.  The 
+disadvantage is that a smoothed plot may mislead the viewer into thinking you 
+have more data than you actually do.
 
 The `ggplot2` functions that create two dimensional graphs of three dimensional
 data are somewhat confusing to work with.  They generally require a regularly 
 spaced "grid" of x and y values.  Different functions that superficially do 
-similar things expect different aesthetics.
+similar things (`geom_contour()`, `geom_contour_filled()` and geom_tile(), 
+expect different aesthetics.
 
 So, to create a depth-time plot smoothed in both directions (dates and depths),
 we need to interpolate from the data to produce equally spaced values. 
@@ -135,8 +273,12 @@ we need to interpolate from the data to produce equally spaced values.
 There is a nice write-up of the logic with simple R code on Dewey Dunnington's 
 [fishandwhistle.net blog](https://fishandwhistle.net/post/2019/depth-time-heatmaps/).
 
-Here, I am headed towards a simple R package, which means I need to be a bit 
-more careful about encapsulating the code in reusable pieces.
+Similar points are made in a response to a Stack Overflow question here:
+https://stackoverflow.com/questions/63792174/get-geom-contour-geom-tile-to-work-with-my-data
+The SO answer points towards the `akima` package, which provides several 
+bivariate interpolation functions, which we could use directly instead of relying
+on rolling our own bivariate interpolation functions.
+
 
 # Interpolation
 R includes a linear  interpolation function, `approx()`.  It takes vector values
@@ -144,18 +286,19 @@ for x and y, and a vector of desired locations (x values) for the estimates. It
 returns a list with `x` and `y` components.  Dunnington used this function in
 his blog, and it is a reasonable first order choice.
 
-We use it here as well.
+We use it here as well, at least to start package development.
 
 But linear interpolation is just one of quite a few possible approaches to take. 
-Many potential smoothers exist in the R universe, including splines, lowess and
+Many potential smoothers exist in the R universe, including sptlines, lowess and
 gam smoothers.  Any of these could be used to generate estimated values where
 data is absent.
 
 Formal GAM modeling has the advantage of providing a ready way to fit a two 
-dimensional smooth, with independent control of intensity of smoothing along two 
-axes.  However, GAM smoothers will always "underfit" extreme values.
+dimensional smooth, with independent control of degree of smoothing along two 
+axes.  However, GAM smoothers (like many smoothers) will  "underfit" extreme 
+values.
 
-# Basic Logic
+## Basic Logic
 We can demonstrate the logic of interpolation in one dimension by interpolating 
 temperature data along each depth profiles.  
 
@@ -169,14 +312,14 @@ irregular depths that will vary from sampling event to sampling event.
 Interpolation along depths can make data from subsequent sampling events easier
 to compare. Although care must be taken to evaluate whether rapid changes in 
 environmental parameters with depth could be obscured, or thin layers with 
-distinct chemical, biological, or optical properties missed. This is likely to 
-be a significant  problem with data from stratified waters, including 
+distinct chemical, biological, or optical properties missed. This can 
+be a significant problem with data from stratified waters, including 
 high latitude lakes, meromictic lakes, and estuaries.
 
 ```{r}
 tmp <- sonde_data %>% 
   select(site, sample_date, depth, month, year, temp) %>%
-  filter(site == 'FR09', year == 2018, month == 'Jul')
+  filter(site == 'FR09', year == 2017, month == 'Jul')
 interp <- as_tibble(approx(tmp$depth, tmp$temp, seq(0, 13, by = 0.25 )))
 interp
 ```
@@ -190,162 +333,205 @@ ggplot(tmp, aes(temp, depth)) +
   geom_point(size = 3) +
   geom_point(mapping = aes(y,x), data = interp, shape = 3) +
   scale_y_reverse() +
-  ylab('Depth (m)') +
-  xlab('Temperature (C)')
+  #ylab('Depth (m)') +
+  #xlab('Temperature (C)')
 rm(tmp, interp)
 ```
 
-### Interpolation Function
+## Interpolation Function
 We need a function that can interpolate from the surface (depth = 0) to
 maximum depth.  This is just a thin wrapper around `approx` that handles 
 a little housekeeping setting up a grid over which we want predictions, if one
 is not provided in the call.
 
-The parameter names `.dep`, `.ind`, and `grid` are mnemonics, to remind you that 
-the function will estimate the dependent variable `.dep` at the value of `.grid`
-based on the [`.ind`, `.dep`] pairs.  `.grid` helps remind you of the intent
+The parameter names `.y`, `.x`, and `grid` are mnemonics, to remind you that 
+the function will estimate the dependent variable `.y` at the value of `.grid`
+based on the [`.x`, `.y`] pairs.  `.grid` helps remind you of the intent
 of the function to provide values at equally spaced values. `.res` provides
 an alternative 
 
-I avoided using ".x" or ".y", or alternatively ".depth" and ".date" because
+I avoided using ".x" or ".y", or alternatively ".y" and ".date" because
 this is a more general function.  For the same reason, I omit tests for
-positive depths.  Who knows how this will get used.
+positive depths.  Who knows how this will get used?
 
 If we want to generalize to use more sophisticated smoothers, this is the 
 function we would need to modify, presumably by passing an expression for 
-an alternate smoother or assembling a all from a function name and list of 
+an alternate smoother or assembling a call from a function name and list of 
 parameters.
 
-The primary differences between this code and the code in Dunnington's blog
-reflects checking assumptions about arguments and providing more flexibility.
+The differences between this code and the code in Dunnington's blog mostly
+reflect checking assumptions about arguments and providing a bit more
+flexibility in how the function could be used.
+
+The calling conventions here are a bit simpler, as we assume all parameters are 
+data vectors.  Most inconsistencies will trigger appropriate errors.  Herr we 
+use the dots to pass additional control variables through to the `approx()` 
+function.
 ```{r}
-interpol <- function(.ind, .dep, .grid = NA, .res = NA,
-                     name = 'Interpol', ...) {
-  # Check parameters
-  stopifnot(is.numeric(.ind), is.numeric(.dep))
-  stopifnot((! is.na(.grid )) | (! is.na(.resolution)))
+interpol <- function(.x, .y, .grid = NA, .res = NA,
+                     .id = '', ...) {
+  # Check parameters. We allow date or time coordinates on the horizontal axis
+  stopifnot(is.numeric(.x) | inherits(.x, 'Date') | inherits(.x, 'POSIXt'))
+  stopifnot( is.numeric(.y))
+  if ((missing(.grid )) & (missing(.res))) {
+    stop("Must provide either a .grid of new positions at which to interpolate ",
+         "or a .res parameter specifying desited interpolation .res.")
+  }
   
-  # We want to capture extra arguments to pass on to `approx()`
-  # or eventually, other smoothers.
+  #TODO:  Add error checks to see if the .grid parameter makes sense
   
-  extra_args = list2(...)
+  # Check for missing values in the X (`.x`) value -- these are not allowed 
+  # with `approx()`.  Missing values in the Y values will be handled according
+  # to the setting of `na.rm =`.
+  if(any(is.na(.x))) {
+    nm = names(.x)
+    stop('NAs not permitted in the independent variable. ',
+         'Remove NAs from ',
+         if_else(nchar(nm) > 0, nm, 'the independent variable'),
+         ' and try again.' )
+  }
+ 
+  extra_args = rlang::list2(...)
 
-  
   # We pass ggrid to the `xout` parameter of `approx()`
-  # so passing ont to this function is an error.
-  if ( 'xout' %in% extra_args | 'n' %in% extra_args) {
-    stop("An `xout` or `n` parameter was found.  Specify the locations or ",
-         "resolution of interpolated values with `.grid` or `.res`.")
+  # so passing `xout` or `n` to this function is an error.
+  if ('xout' %in% names(extra_args) | 'n' %in% names(extra_args)) {
+    stop("An `xout` or `n` parameter was found.  Specify location or ",
+         ".res of interpolated values with `.grid` or `.res`.")
   }
-  
- # For `approx()`
 
-  allowed_args <-c( 'method',   # c("linear","constant")
-                    'yleft',    # What to return below lowest .inf?
-                    'yright',   # what to return above highest .ind
-                    'rule',     # What rule to apply to define values outside?
-                                # 1 = NAs, 2 = extrema. Ialternative)
-                    'f',        # a factor that indicated where between to adjacent values 
-                    'ties',
-                    'na.rm' )
-extra_args <- extra_args[extra_args %in% allowed_args]
-  
-  # What is maximum depth for the interpolation?
-  max.ind = max(ind, na.rm = TRUE)
-  
-  # Round max depth up to a whole number for interpolation
-  # this matters little with `approx()` since it will never provide a 
-  # value outside the range of original data.
-  if ( ! abs((max.ind - round(max.ind)) < 0.001))
-    max.ind <- ceiling(max.ind)
-  
-  # If the function did not 
+  # If we were not given a grid, we need to develop one based on the data
+  # and the `.res` parameter.
   if (missing(.grid)) {
-    ggrid = seq(0, max.ind, by = .res)
-  }
-  else {
-    ggrid = .grid
-  }
-  
-  vals <- as.tibble(approx(ddepth, vvalue, ggrid)) %>%
-    rename(depth = x, value = y) %>%
-    mutate(id = name) %>%
+    # What is maximum depth for the interpolation?
+    # from a design point of view, it may be better to allow this parameter to 
+    # be passed to this function, e.g., for consistency across dates.
+    max.x = max(.x, na.rm = TRUE)
+    
+    # Round max depth up to a whole number for interpolation.  This allows
+    # the grid to end on a whole number depth, which will usually be right.
+    # Several items, including whether to round, the number of decimals to 
+    # round to, and the tolerance for testing equality, might all be better
+    # if the user were given direct control via function parameters.
+    if ( ! abs((max.x - round(max.x)) < 0.001))
+      max.x <- ceiling(max.x)
+
+    # Generate the grid
+    # TODO: Consider if there is a way to pass the grid back out of the function 
+    # for use in other analyses.
+      ggrid = seq(0, max.x, by = .res)
+    }
+    else {
+      ggrid = .grid
+    }
+
+  vals <- as_tibble(approx(x = .x, y = .y, xout = ggrid, ...)) %>%
+    rename(ind = x, dep = y) %>%
+    mutate(id = .id) %>%
     relocate(id)
   return(vals)
 }
 ```
 
+### Testing the Function
 ```{r}
 tmp <- sonde_data %>% 
   select(site, sample_date, depth, month, year, temp) %>%
   filter(site == 'FR09', year == 2018, month == 'Jul')
-interp <- interpol(tmp$depth, tmp$temp, resolution = 0.5)
+interp <- interpol(tmp$depth, tmp$temp, .res = 0.5, na.rm = TRUE)
 
 ggplot(tmp, aes(temp, depth)) +
-  geom_point(col = cbep_colors()[5], size = 3) +
-  geom_point(mapping = aes(value, depth), data = interp, shape = 3) +
+  geom_point(size = 3) +
+  geom_point(mapping = aes(dep, ind), data = interp, shape = 3) +
   scale_y_reverse() +
   ggtitle('Fore River Site 09, July 2018')
-rm(tmp, interp)
 ```
 
-### Apply to Multiple Dates 
-With an interpolation function available, we need to roll that into a function
-that will correctly interpolate with dates, but not across dates when data was 
-collected.  Much of this code allows integration into a typical `tidyverse`
-workflow, and provides a few simple parameter validation checks.
+
+#### Pass Other Parameters to `approx()`
+Here's a list of available parameters for 'approx' that don't conflict with
+our usage conventions here:
+
+'method':  c("linear","constant").  while "constant" interpolation is 
+           probably not   useful in this context, who knows?   
+      
+'yleft':  What to return below lowest .x value?  
+
+'yright'   What to return above highest .x value?
+
+'rule':  An alternative to `yleft` and `yright`. What rule to apply to define 
+          values outside? 1 = NAs, 2 = extrema.  This is probably worth 
+          experimenting with for some graphics.
+    
+'f':  a numeric value that indicates where between  two adjacent values to 
+      place a "constant"  interpolation.  0 implies lowest value. 1 the 
+      highest, and 0.5 the midpoint.
+    
+'ties':  what to do if we have tied X values? Default
+         is to use the mean y value associated with all
+         tied x values.
+    
+'na.rm'     # As usual, and likely to need setting by users.
+
 
 ```{r}
-all_dates_interp <- function(.dt, .thedate, .depth, .value,
-                             name = '', resolution = 0.5) {
+interp <- interpol(tmp$depth, tmp$temp, .res = 0.5,
+                           na.rm = FALSE, method = 'constant', rule = 2)
+
+ggplot(tmp, aes(temp, depth)) +
+  geom_point(size = 3) +
+  geom_point(mapping = aes(dep, ind), data = interp, shape = 3, color = 'orange') +
+  scale_y_reverse() +
+  ggtitle('Fore River Site 09, July 2018')
+```
+
+# Apply to Multiple Dates 
+With an interpolation function available, we need to roll that into a function
+that will correctly interpolate within dates, but not across dates.  We again
+use .x and .y for the horizontal (usually date) and vertical (usually depths) 
+coordinates.
+
+```{r}
+interpol_along_depths <- function(.dt, .x, .y, .val,
+                             .id = '', .res = 0.5) {
   
   # These are ugly argument checks, since they don't provide nice error messages.
   stopifnot(is.data.frame(.dt))
-  stopifnot(length(resolution) == 1)
+  stopifnot(length(.res) == 1)
 
-  ddate  <- as.character(ensym(.thedate))
-  ddepth <- as.character(ensym(.depth))
-  vvalue <- as.character(ensym(.value))
+  ddate  <- ensym(.x)
+  ddepth <- ensym(.y)
+  vvalue <- ensym(.val)
   
-  # ddate  <-  rlang::as_name(.thedate)
-  # ddepth <-  rlang::as_name(.depth)
-  # vvalue <-  rlang::as_name(.value)
-  
-  # Check that these are data names from the data frame
-  
-  stopifnot(ddate %in% names(.dt))
-  stopifnot(ddepth %in% names(.dt))  
-  stopifnot(vvalue %in% names(.dt))  
-
   # Create internal dataframe
   # This is wasteful of memory for large data sets but simplifies coding.
-  df <- tibble(the_date = .dt[[ddate]], 
-               dpth = .dt[[ddepth]],
-               val = .dt[[vvalue]])
+  df <- tibble(xx = eval_tidy(ddate, .dt), 
+               yy = eval_tidy(ddepth, .dt),
+               zz = eval_tidy(vvalue, .dt))
   
-  # establish the grid for all dates, despite tides, etc.
+  # Establish the grid for all dates, despite tides, etc.
   # Since we are headed for a single plot, we set limits for 
   # depth based on the deepest observations from any date.
   # `approx()` will give NA outside the range of observations.
   
-  max_dpth <- max(df$dpth)
+  max_dpth <- max(df$yy)
   # Round max depth up to a whole number for interpolation
   max_dpth <- if_else( (abs(max_dpth - round(max_dpth)) < 0.001),
                       max_dpth, 
                       round(max_dpth + 0.5))
-  grid = seq(0, max_dpth, resolution)
+  grid = seq(0, max_dpth, .res)
   
   # now, we work through each date.  This returns a dataframe for each date.
   # note that we use the `name` parameter to the interpol function to remember
   # the date for each data set.
-  res <- df %>%
-    group_by(the_date) %>%
+  prof <- df %>%
+    group_by(xx) %>%
     nest() %>%
-    mutate(res = map(data, function(dat) interpol(dat$dpth, dat$val,
+    mutate(prof = map(data, function(dat) interpol(dat$yy, dat$zz,
                                                   .grid = grid,
-                                                  name = the_date)))
+                                                  .id = xx)))
   # And we use `reduce()` and `bind_rows()` to combine them to one dataframe
-  r = reduce(res$res, bind_rows)
+  r = reduce(prof$prof, bind_rows)
   return(r)
 }
 ```
@@ -355,20 +541,19 @@ tmp <- sonde_data %>%
   select(site, sample_date, depth, month, year, temp) %>%
   filter(site == 'FR09', year == 2018)
 
-test <- all_dates_interp(tmp, sample_date, depth, temp, resolution = 0.5)
+test <- interpol_along_depths(tmp, sample_date, depth, temp, .res = 0.5)
 ```
 
 ```{r}
-ggplot(test, aes(id, depth, color = value)) +
+ggplot(test, aes(id, ind, color = dep)) +
   geom_point(size = 3) +
   scale_y_reverse() +
   scale_color_gradient2(name = 'Temperature (C)', 
                         midpoint = 15, 
                          high = scales::muted("red"), 
-                         low = scales::muted("blue"), na.value = 'white') +
+                         low = scales::muted("blue")) +
   ylab('Depth (m)') +
   xlab('Date') +
-  theme_cbep(base_size = 12) +
   
   theme(legend.position = 'bottom',
         legend.title = element_text(size = 12),
@@ -378,103 +563,55 @@ ggplot(test, aes(id, depth, color = value)) +
 ```
 
 ## Dates
-We can use essentially the same logic to interpolate by dates.
+Now that we have a grid in one direction, we can generate a grid the other way,
+depth by depth, across dates.
 
-We assume this function is being passed a dataframe with three items:
-dates, depths and values.  It has already gone through interpolation by depth,
-so it has regularly 
+We can use essentially the same logic as before, this time along depths.
 
-It will return a (larger) dataframe that fills in
-values between observations.
+We assume this function is being passed a data frame with three items:
+dates (`.x), depths (.y) and values (.val).  It has already gone through 
+interpolation by depth, so it has regularly spaced values along the y axis.
 
-### Interpolation Function
-We break out a function to generate a tibble for one depth at a time
+It will return a (larger) dataframe that fills in values between dates
+
+## Apply to Multiple Dates
 ```{r}
-interpol_dates <- function(.dts, .value, .grid = NA, resolution = 5,
-                     .id = '') {
+all_dates_fill <- function(.dt, .x, .y, .val, .res = 1) {
   #browser()
-  ddate = .dts[! is.na(.dts) & ! is.na(.value)]
-  vvalue = .value[! is.na(.dts) & ! is.na(.value)]
-  
-  
-  if (sum(! is.na(vvalue)) > 1) {   # We have some actual data....
-    # Establish the grid
-    first = min(ddate)
-    last =  max(ddate)
-    if (missing(.grid)) {
-      ggrid = seq(first, last, by = resolution)
-    }
-    else {
-      ggrid = .grid
-    }
-    vals <- as_tibble(approx(ddate, vvalue, ggrid)) %>%
-      rename(i_date = x, value = y) %>%
-      mutate(id = .id) %>%
-      relocate(id) }
-  else {
-    vals <- tibble(i_date = sort(unique(.dts)), value = NA_real_) %>%
-      mutate(id = .id) %>%
-      relocate(id) }
-  return(vals)
-}
-```
-
-```{r}
-tmp <- test %>% 
-  filter(depth == 1)
-# note the use of `min()` here is only to convert a vector to a single value so
-# it can be recycled.
-interp <- interpol_dates(tmp$id, tmp$value, .id = min(tmp$depth))
-
-ggplot(tmp, aes(id, value)) +
-  geom_point(col = cbep_colors()[5], size = 3) +
-  geom_point(mapping = aes(i_date, value), data = interp, shape = 3) +
-  ylab('Temperatur (C)') +
-  xlab('')
-```
-The abrupt change from increasing to decreasing temperatures on the August
-sample date is clearly problematic.  The alternative would be to use some sort
-of smoother to generate estimates instead of `approx()`.
-
-### Apply to Multiple Depths
-```{r}
-all_dates_fill <- function(.dt, .thedate, .depth, .value, resolution = 1) {
+  # These are ugly argument checks, since they don't provide nice error messages.
+  stopifnot(is.data.frame(.dt))
+  stopifnot(length(.res) == 1)
   
   # Read in names of variables 
-  ddate  <- as.character(ensym(.thedate))
-  ddepth <- as.character(ensym(.depth))
-  vvalue <- as.character(ensym(.value))
-  
-  # Check that these are data names from the data frame before we continue
-  stopifnot(ddate %in% names(.dt))
-  stopifnot(ddepth %in% names(.dt))  
-  stopifnot(vvalue %in% names(.dt))  
+  ddate = ensym(.x)
+  ddepth <- ensym(.y)
+  vvalue <- ensym(.val)
   
   # Create internal dataframe
   # This is wasteful of memory for large data sets but simplifies coding
-  df <- tibble(the_date = .dt[[ddate]], 
-               depth = .dt[[ddepth]],
-               value = .dt[[vvalue]])
+  df <- tibble(xx = eval_tidy(ddate, .dt), 
+               yy = eval_tidy(ddepth, .dt),
+               zz = eval_tidy(vvalue, .dt))
   
-  # now, we work through each depth  This returns a dataframe for each date.
-  dff <- df %>%
-    group_by(depth) %>%
-    nest()
-  res <- dff %>%
-    mutate(res = map(data, function(dat)
-                           interpol_dates(dat$the_date, 
-                                          dat$value, resolution = 1,
-                                         .id = depth))) %>%
-    mutate(res = map(res, function(dat) rename(dat, depth = id)))
-   #browser()
+  # Now, we work through each depth
+ int_grid <<- df %>%
+    group_by(yy) %>%
+    nest() %>%
+    mutate(int_grid = map(data, function(dat)
+                           interpol(df$xx,  dat$zz, 
+                                    .res = .res,
+                                         .id = yy)))
    rr <-  reduce(res$res, bind_rows)
+   
+   rr <- rr %>%
+     rename(x = ind, y = id, val = dep)
    return(rr)
 }
 ```
 
 # Test
 ```{r}
-tt <- all_dates_fill(test, id, depth, value, resolution = 5 )
+tt <- all_dates_fill(test, id, ind, dep, .res = 5 )
 tt
 ```
 
@@ -486,7 +623,7 @@ to make plot colours directly comparable add consistent limits to each plot:
 scale_fill_gradient2('pi0', low = "blue", mid = "white", high = "red", midpoint = 0,
 
 
-# Preliminar Graphic Output
+# Preliminary Graphic Output
 ```{r}
 tt %>%
   filter(! is.na(value)) %>%
