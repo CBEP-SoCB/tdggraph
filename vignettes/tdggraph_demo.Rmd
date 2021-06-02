@@ -1,0 +1,279 @@
+---
+title: "Demos of Major `tdggaph` Functions"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{tdggraph_demo}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  fig.align = 'center',
+  fig.width = 5, 
+  fig.height = 4,
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+
+# Setup 
+The pseudo package "tidyverse" does not work in CMD check, since during
+the checks, only packages explicitly included in the DESCRIPTION file are
+loaded.  Here we load each package individually.
+```{r setup}
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(forcats)
+library(ggplot2)
+library(tdggraph)
+data(dep_sonde)
+```
+
+# `ptlines()` Demo
+the `ptlines()` function generates a line graph with vertical profiles shown as 
+lines.  Different profiles are distinguished by color.  This is an excellent
+format to show differences in profiles between a relatively modest number of samples, as viewers  can easily compare profiles against each other.
+
+Data is preferentially found inside the data frame passed as the first argument.
+Arguments are in the order of x coordinate -- here a **value** , y coordinate --
+usually the depth -- and a grouping variable -- often a date or a location.  The
+grouping variable should evaluate to a factor of character vector, as it will
+always be used to divide data into separate profiles.
+```{r}
+ptlines(dep_sonde, temp, depth, month) +
+  theme_minimal()
+```
+
+## Data From the Enclosing Environment
+If all data is available in the enclosing environment, you can pass NULL as the data frame parameter.  This is helpful if yo uare using the functions inside 
+another function, where you may not want to assemble a data frame.
+```{r}
+m <- dep_sonde$month
+d = dep_sonde$depth
+ox = dep_sonde$do
+
+ptlines(NULL, ox, d, m) +
+  theme_minimal()
+```
+
+## Integration with `tidyverse` and `ggplot
+The functions are designed to integrate well with ggplot and dplyr work flows.
+Note that you can pass additional aesthetic specifications as part of the call
+to `ptlines().  They will be passed on to `geom_path()` internally.
+
+Passing the name of a vector in the data frame into a supplementary
+`mapping = aes()` call does yet not work.  Any supplementary aesthetics
+defined in `mapping = aes()` must refer to names from the enclosing
+environment.  See the example in the `ptdots()` demo for using filled symbols 
+for an example.
+```{r}
+dep_sonde%>%
+  arrange(sample_date, depth) %>% 
+  mutate(txt_date = format(sample_date, format = '%m/%d'),
+         txt_date = factor(txt_date),
+         txt_date = fct_reorder(txt_date, sample_date)) %>%
+
+ptlines(temp, depth, txt_date, size = 1.5, lty = 2) +
+  theme_minimal() +
+  scale_color_brewer(type = 'qual', name = '') +
+  ylab('Depth (m)') +
+  xlab('')
+```
+
+# `ptdots()` Demo
+The dots provide an alternative way of depicting similar data.  Here, the
+graphic emphasizes dates over the course of a season, at the expense
+of making subtle differences in profiles more difficult to assess.  Default colors from `ggplot2` are often a poor choice here. 
+```{r}
+ptdots(dep_sonde, month, depth, do, size = 5) +
+  theme_minimal() +
+  scale_color_gradient2(name = 'Oxygen, (mg/l)',
+                        high = scales::muted("blue"), 
+                        low = scales::muted("red"),
+                        mid = 'gray95',
+                        midpoint = 9)
+```
+
+## Data from the enclosing environment
+We can pass NULL as a data frame parameter if all data is available in the 
+enclosing environment.
+```{r}
+ptdots(NULL, m, d, ox, size = 5) +
+  theme_minimal()
+```
+
+## Filled Symbols
+Passing the name of a vector in the data frame into a supplementary
+`mapping = aes()` call does yet not work.  Any supplementary aesthetics
+defined in `mapping = aes()` must refer to names from the enclosing
+environment.
+
+As a result, using  filled point symbols. (R point shapes 21 through 25) takes
+several additional steps:
+
+1. Add `mapping = aes(fill = ?)` to the function call, pointing 
+   to data in the enclosing environment, usually by qualifying the name of 
+   the data frame explicitly with `$`. 
+
+2. Pass a `shape` argument selecting the filled symbol shape
+  
+3. Usually, pass a `color` argument to define the fixed dot outline color.
+   (`color = 'gray50'` is often a good starting point).  If you don't specify
+   a single color, the outline color will still vary,  which is probably not 
+   what you want. 
+
+4. Usually, you will want to supplement the call to this function with a 
+   call to `scale_fill_viridis_c()`, `scale_fill_distiller()`, or 
+   `scale_fill_continuous()` to define a fill color scale that works better than
+   the `ggplot2` default.
+
+```{r}
+ptdots(dep_sonde, month, depth, do, size = 3, 
+       shape = 22, color = 'gray25',
+       mapping = aes(fill = dep_sonde$do)) +
+  theme_minimal() +
+  scale_fill_gradient(name = 'Oxygen, (mg/l)',
+                        high = "paleturquoise1", 
+                        low = scales::muted("darkgreen")) +
+  xlab('') +
+  ylab('Depth (m)')
+```
+
+# `interpol()` Demo
+This function is a thin wrapper around base R's `approx()` function, which implements simple linear interpolation.  The major difference is that the return value of 
+`interpol()` is a data frame, not a list.  The function is used "under the hood"
+to generate graphics interpolated in two directions without clipping.
+
+The basic idea for this function and its use in generating smoothed graphics for
+profile data  were inspired by Dewey Dunnington's 
+fishandwhistle.net [blog](https://fishandwhistle.net/post/2019/depth-time-heatmaps/).
+
+## By Depths / Numeric Values
+```{r}
+dat <- dep_sonde[dep_sonde$month == 'Jul',]
+grid <- seq(0, 14, 1)
+interp <- interpol(dat$depth, dat$temp, .grid = grid)
+
+ggplot(dat, aes(temp, depth)) +
+  geom_point(size = 3, col = 'red') +
+  geom_point(mapping = aes(dep, ind), data = interp, shape = 3) +
+  scale_y_reverse()
+```
+
+## By Dates / Times
+```{r}
+tmp <- dep_sonde %>% 
+  select(site, sample_date, depth, month, temp) %>%
+  group_by(sample_date) %>%
+  filter(depth == min(depth)) %>%
+  ungroup(sample_date)
+
+grid <- seq(min(tmp$sample_date), max(tmp$sample_date), 7)
+
+interp <- interpol(tmp$sample_date, tmp$temp, .grid = grid, 
+                   grow_grid = FALSE,
+                   na.rm = TRUE)
+
+ggplot(tmp, aes(temp, sample_date)) +
+  geom_point(size = 3, col = 'red') +
+  geom_point(mapping = aes(dep, ind), data = interp, shape = 3) +
+  ggtitle('Fore River Site 09, July 2018')
+```
+
+### Functional Programming
+`interpol() includes an optional `.name` argument, which can be useful when
+assembling larger data frames through workign with nested tibbles or functional
+programming.  For example,  one might often want to interpolate within dates,
+not between dates.
+
+We calculate a grid to use for each date, then use a nested tibble to
+interpolate within each date before using `reduce()` to generate a tidy
+(long-form) tibble containing the results of the interpolation.
+```{r}
+lims <- range(dep_sonde$depth) 
+max_y = ceiling(lims[2])
+min_y = floor(lims[1])
+ygrid = seq(min_y, max_y, by = 0.5)
+
+profs <- dep_sonde %>%
+    group_by(sample_date) %>%
+    nest() %>%
+    mutate(prof = map(data, function(dat) interpol(dat$depth, dat$do, 
+                                                   .name = sample_date,
+                                                   .grid = ygrid)))
+profs <- reduce(profs$prof, bind_rows) %>%
+  mutate(txt_date = factor(format(id, format = '%m/%d')),
+         txt_date = fct_reorder(txt_date, id)) %>%
+  rename(do = dep, depth = ind)
+```
+
+```{r}
+ggplot(profs, mapping = aes(x = do, y = depth)) +
+  geom_point(aes(color = txt_date))+
+  geom_path(aes(color = txt_date)) +
+  geom_point(data = dep_sonde, mapping = aes(x = do, y = depth))
+```
+
+# `interpol_res()` Demo
+`interpol_res()` is an only slightly more consequential extension of base R's
+`approx()` function.  It's primary claim to fame is that it allows the user to
+specify a resolution for evenly spaced interpolations.  Like `interpol()`,
+it outputs a dataframe, not a list.
+
+## By Depths / Numeric Values
+```{r}
+data(dep_sonde)
+dat <- dep_sonde[dep_sonde$month == 'Jul',]
+interp <- interpol_res(dat$depth, dat$temp, .res = 0.5)
+
+ggplot(dat, aes(temp, depth)) +
+  geom_point(size = 3, col = 'red') +
+  geom_point(mapping = aes(dep, ind), data = interp, shape = 3) +
+  scale_y_reverse()
+```
+
+## By Dates / Times
+```{r}
+tmp <- dep_sonde %>% 
+  select(site, sample_date, depth, month, temp) %>%
+  group_by(sample_date) %>%
+  filter(depth == min(depth)) %>%
+  ungroup(sample_date)
+  
+interp <- interpol_res(tmp$sample_date, tmp$temp, .res = 5, 
+                   with_zero = FALSE, na.rm = TRUE)
+
+ggplot(tmp, aes(temp, sample_date)) +
+  geom_point(size = 3, col = 'red') +
+  geom_point(mapping = aes(dep, ind), data = interp, shape = 3) +
+  ggtitle('Fore River Site 09, July 2018')
+```
+
+## Passing an Empty Dataframe
+Should return a data frame with NA in second variable.
+```{r}
+t <- unique(dep_sonde$sample_date) %>%
+  sort
+df <- tibble(x = t, y = NA_integer_)
+interp <- interpol_res(df$x, df$y, .res = 2, with_zero = FALSE, na.rm = TRUE)
+head(interp)
+```
+
+#`ptsmooth()` demo
+```{r}
+data(dep_sonde)
+ptsmooth(dep_sonde, sample_date, depth, temp, 
+         .res_x = 1, .res_y = .25, 
+         y_grow_grid = TRUE,
+         y_with_zero = TRUE) +
+scale_fill_gradient2(name = 'Oxygen, (mg/l)',
+                        low = scales::muted("blue"), 
+                        high = scales::muted("red"),
+                        mid = 'gray95',
+                        midpoint = 15)
+  
+```
+

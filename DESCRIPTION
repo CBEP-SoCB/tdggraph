@@ -22,7 +22,16 @@ Imports:
     tibble,
     rlang,
     dplyr,
-    magrittr
+    tidyr,
+    purrr,
+    forcats,
+    magrittr,
+    stats,
+    methods,
+    scales
 Suggests: 
+    rmarkdown,
+    knitr,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
+VignetteBuilder: knitr

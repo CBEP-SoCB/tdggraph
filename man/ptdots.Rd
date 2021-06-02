@@ -23,7 +23,10 @@ measured environmental variable that varies with water depth. Can be
 either a numeric vector or the name of a numeric vector in source data
 frame, not an expression.}
 
-\item{...}{}
+\item{...}{Further arguments to pass to \code{geom_point()}.  Likely to include
+additional aesthetic specifications.  To pass additional aesthetic
+mappings, use \code{mapping = aes()} referring to names from the enclosing
+environment (not a data column name).}
 }
 \value{
 A \code{ggplot} object (S3 class defined by \code{ggplot2})
@@ -69,7 +72,7 @@ cal lto \code{scale_fill_viridis_c()}, \code{scale_fill_distiller()}, or
 }
 \examples{
 # Dummy data
-df <- tibble::tibble(depth = rep(1:10,3), 
+df <- tibble::tibble(depth = rep(1:10,3),
                 month = factor(rep(c(6,7,8),each = 10),
                                  labels = c('Jun', 'Jul', 'Aug')),
                 val = (depth+50)/5 - 5 + rnorm(30, 0, 0.25))
@@ -78,7 +81,7 @@ ptdots(df, month, depth, val) +
   theme_minimal()
 
 # Filled Symbols
-ptdots(dep_sonde, month, depth, do, size = 5, 
+ptdots(dep_sonde, month, depth, do, size = 5,
       shape = 21, color = 'gray25',
      mapping = aes(fill = dep_sonde$do)) +
  theme_minimal()

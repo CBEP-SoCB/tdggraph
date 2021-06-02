@@ -3,7 +3,7 @@
 \name{interpol}
 \alias{interpol}
 \alias{interpol_res}
-\title{Interpolate values to a regular grid using linear interpolation}
+\title{Interpolate values to a grid using linear interpolation}
 \usage{
 interpol(.x, .y, .grid, .name = "ID", grow_grid = TRUE, ...)
 
@@ -53,10 +53,10 @@ functional programming.), \code{ind} (independent variable), and \code{dep} (dep
 variable).
 }
 \description{
-These functions are both a thin wrappers around base R's \code{approx()} function.
-The primary difference is that these functions output a tibble instead of
-a list with \code{x} and \code{y} components. The tibble / data frame output simplifies
-use in some work flows.
+These functions are both a thin wrappers around the \code{approx()} function from
+Base R's \code{stats} package. The primary difference is that these functions
+output a tibble instead of list with \code{x} and \code{y} components. The
+tibble / data frame output simplifies use in some work flows.
 }
 \details{
 The functions uses simple linear interpolation to estimate values at
@@ -82,11 +82,13 @@ convert the output of \code{approx()} to a tibble.
 regularly spaced intervals. It includes some optional parameters that
 simplify its use in the context of creating smoothed depth-time plots from
 repeated "profile" data, as often collected in limnology and oceanography.
+The function is not directly used by other functions in this package, which
+al lrely on \code{interpol()} instead.
 }}
 
 \examples{
 data(dep_sonde)
-dat <- dep_sonde[dep_sonde$month == 'Jul']
+dat <- dep_sonde[dep_sonde$month == 'Jul',]
 grid <- seq(0, 14, 1)
 interp <- interpol(dat$depth, dat$temp, .grid = grid)
 
@@ -95,8 +97,8 @@ ggplot(dat, aes(temp, depth)) +
   geom_point(mapping = aes(dep, ind), data = interp, shape = 3) +
   scale_y_reverse()
 data(dep_sonde)
-dat <- dep_sonde[dep_sonde$month == 'Jul']
-interp <- interpol_res(dat$depth, dat$temp, res = 0.5)
+dat <- dep_sonde[dep_sonde$month == 'Jul',]
+interp <- interpol_res(dat$depth, dat$temp, .res = 0.5)
 
 ggplot(dat, aes(temp, depth)) +
   geom_point(size = 3, col = 'red') +

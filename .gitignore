@@ -43,3 +43,4 @@ vignettes/*.pdf
 # select omissions
 /testing/
 /drafts/
+inst/doc

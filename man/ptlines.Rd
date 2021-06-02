@@ -14,15 +14,15 @@ vectors are found in the enclosing environment.}
 measured quantity.  Either a numeric vector or name of a
 numeric vector from the source data frame (unquoted or quoted)}
 
-\item{.y}{value that defines the (reversed) y coordinate of the plot.
+\item{.y}{Value that defines the (reversed) y coordinate of the plot.
 Usually the depth coordinate.  Can be either a numeric vector or the name
 of a numeric vector in source data frame (unquoted or quoted)}
 
-\item{.grp}{factor or character vector, name of a factor or character vector
+\item{.grp}{Factor or character vector, name of a factor or character vector
 in the source data frame, or an expression that evaluates (with data
 masking) to a character or factor vector.  Usually a date.}
 
-\item{...}{other arguments to pass to \code{geom_path()}.  Likely to include
+\item{...}{Other arguments to pass to \code{geom_path()}.  Likely to include
 additional aesthetics.  To pass additional aesthetic mappings, use
 \code{mapping = aes()}.}
 }
@@ -44,7 +44,7 @@ The function's first parameter is a data frame, and it produces a \code{ggplot2}
 plot object, so can be integrated into \code{ggplot2} and\code{tidyverse} work flows.
 }
 \examples{
-df <- tibble::tibble(depth = rep(1:10,3), 
+df <- tibble::tibble(depth = rep(1:10,3),
                 month = factor(rep(c(6,7,8),each = 10),
                                  labels = c('Jun', 'Jul', 'Aug')),
                 val = (depth+50)/5 - 5 + rnorm(30, 0, 0.25))
