@@ -46,6 +46,8 @@ changes are likely, and there is no intention yet of protecting backwards
 compatibility.
 
 # TO DO
+* Develop testing suite.
+
 *  Redraft `interpol()` and `ptsmooth()` to allow selection of other smoothers.
 
 *  Evaluate alternative selection of data from the Maine DEP sonde data.  
