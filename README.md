@@ -25,7 +25,7 @@ depicting these data.  The package is especially useful for producing
 graphics from season-long series of periodic profile observations.
 The three main graphics functions create `ggplot2` graphic objects with 
 different strengths for emphasizing different aspects of the data. For most
-users, teh `tdsmooth()` function wil lbe the primary one of interest.
+users, the `tdsmooth()` function will be the primary one of interest.
 
 ## The Names
 The name of the package reflects that it is intended to work with '**td**' (time
