@@ -318,10 +318,11 @@ ptdots(dep_sonde, sample_date, depth, do, size = 3,
 ```
 
 #`ptsmooth()` demo
-This function produces a two dimensional interpolation plot. it can be thought of 
-as a smoothed out version of `ptdots()`. It is especially useful for 
+This function produces a two dimensional interpolation plot. It can be thought 
+of as a smoothed out version of `ptdots()`. It is especially useful for 
 "eyeballing" seasonal patterns from periodic data. As before, default colors 
-are seldom the most informative.
+are seldom the most informative.  Currently, NAs replace any grid cells below
+the lowermost (highest Y value) data points.
 ```{r}
 data(dep_sonde)
 plt <- ptsmooth(dep_sonde, sample_date, depth, temp, 

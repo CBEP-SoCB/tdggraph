@@ -1,9 +1,9 @@
 #' Smoothed Depth by Time Plot
 #'
-#' Interpolates from a series of depth profiles, taken at different dates or
-#' times, and generates a smoothed bivariate time (x axis) by depth (y axis,
-#' reversed) plot using linear interpolation. Values of the variable being
-#' plotted are symbolized by color.
+#' Interpolates from a series of depth profiles, taken at different dates,
+#' times, or locations, and generates a smoothed bivariate time/location  (x
+#' axis) by depth (y axis, reversed) plot using linear interpolation. Values of
+#' the variable being plotted are symbolized by color.
 #'
 #' @param .dt   Data frame containing data to plot. Can be NULL, if all data
 #'     vectors are found in the enclosing environment.
@@ -36,6 +36,10 @@ ptsmooth <- function(.dt, .x, .y, .val,
                      .res_x = 0.5, .res_y = 2,
                      y_grow_grid = TRUE,
                      y_with_zero = TRUE) {
+
+  #todo: Figure out how to make function output work with facets
+  #todo: Make it so plot does not show values to ofar outside of
+  #      range of observations
 
   # These are ugly argument checks, since they don't provide nice error messages.
   stopifnot(is.data.frame(.dt))
@@ -83,12 +87,25 @@ ptsmooth <- function(.dt, .x, .y, .val,
   # Generate the grid
   ygrid = seq(min_y, max_y, by = .res_y)
 
+
+  # Calculate depths below which we should replace interpolated values by NAs...
+  # We can use interpol for this again....
+  #browser()
+  # First we determine minimum y  for each x value.
+  max_y <- df %>%
+    dplyr::group_by(xx) %>%
+    dplyr::summarize(max_y = max(yy))
+  # and then interpolate
+  max_grid_y <- interpol(max_y$xx, max_y$max_y, xgrid, grow_grid = FALSE) %>%
+    dplyr::rename(grid_x = ind, max_y = dep) %>%
+    dplyr::select(-id)
+
+
   # We work through each date in a tidyr::nested tibble.
   # This returns a dataframe for each date.
   # note that we use the `.name` parameter to the interpol function to remember
   # the date for each data set.
 
-  #browser()
   profs <- df %>%
     dplyr::group_by(xx) %>%
     tidyr::nest() %>%
@@ -114,6 +131,17 @@ ptsmooth <- function(.dt, .x, .y, .val,
   rr <-  purrr::reduce(full_grid$full_grid, dplyr::bind_rows)
   rr <- rr %>%
     dplyr::rename(x = ind, y = id, val = dep)
+
+  # Finally, we need to convert extra grid cells "below" our data to NA
+  # note this code assumes .val is a real.....
+  #browser()
+  rr <- rr %>%
+    dplyr::mutate(limit = max_grid_y$max_y[match(x, max_grid_y$grid_x)])
+
+  rr <- rr %>%
+    dplyr::mutate( val = dplyr::if_else(y > limit,
+                                 NA_real_, val))
+
 
   plt <- ggplot(rr, aes(x, y)) +
     geom_tile(aes(fill = val)) +

@@ -44,10 +44,10 @@ frame, not an expression.}
 A \code{ggplot} object (S3 class defined by \code{ggplot2})
 }
 \description{
-Interpolates from a series of depth profiles, taken at different dates or
-times, and generates a smoothed bivariate time (x axis) by depth (y axis,
-reversed) plot using linear interpolation. Values of the variable being
-plotted are symbolized by color.
+Interpolates from a series of depth profiles, taken at different dates,
+times, or locations, and generates a smoothed bivariate time/location  (x
+axis) by depth (y axis, reversed) plot using linear interpolation. Values of
+the variable being plotted are symbolized by color.
 }
 \examples{
 data(dep_sonde)
