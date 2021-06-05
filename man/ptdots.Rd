@@ -32,7 +32,7 @@ environment (not a data column name).}
 A \code{ggplot} object (S3 class defined by \code{ggplot2})
 }
 \description{
-Build a "depth down" \code{ggplot2} point graphic for repeated depth
+Build a "depth down" \code{ggplot} point graphic for repeated depth
 profile data.
 }
 \details{
@@ -42,7 +42,7 @@ the top and depth increases downward.  Values are drawn as dots on an x
 (usually date or time) by y (usually depth, reversed) layout.  By default,
 dots are symbolized by color to depict measured values.
 
-The function's first parameter is a data frame, and it produces a \code{ggplot2}
+The function's first parameter is a data frame, and it produces a \code{ggplot}
 plot object, so can be integrated into \code{ggplot2} and\code{tidyverse} work flows.
 
 Default colors from \code{ggplot2} are seldom optimal.  Users will usually want to

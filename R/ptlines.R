@@ -24,6 +24,9 @@
 #' @param .grp  Factor or character vector, name of a factor or character vector
 #'     in the source data frame, or an expression that evaluates (with data
 #'     masking) to a character or factor vector.  Usually a date.
+#' @param .sort TRUE / FALSE.  Should data be sorted by .y variable before
+#'     plotting?  This is almost always what you want to generate clean
+#'     traces for each profile.
 #' @param ... Other arguments to pass to `geom_path()`.  Likely to include
 #'     additional aesthetics.  To pass additional aesthetic mappings, use
 #'     `mapping = aes()`.
@@ -39,20 +42,23 @@
 #'                 val = (depth+50)/5 - 5 + rnorm(30, 0, 0.25))
 #' ptlines(df, val, depth, month) +
 #'   theme_minimal()
-ptlines <- function(.dt, .val, .y, .grp, ...) {
-  # ptlines draws vertical profile plots, optionally including colors
-  # for different times / dates.
+ptlines <- function(.dt, .val, .y, .grp, .sort = TRUE, ...) {
 
-
-  # Ugly argument check, since it doesn't provide meaningful error message.
+  # Ugly argument check, since it doesn't provide nice error message.
   stopifnot(is.data.frame(.dt) | is.null(.dt))
+
+  #todo: Add further data conformity error checks to facilitate testing
+  #todo: add optional .grp grouping variable that allows data masking
+  #todo: Figure out how to make function output work with facets
+  #todo add code to allow specification of y axis limits -- currently not
+  #     possible by modifying the plot output as usual.
 
   # We want to be able to accept arguments as unquoted names or quoted names.
   # `ensym()`  captures only names, not expressions.  We are testing the use
   # of `enexpr()` for the color factor to allow use of structures like
   # `factor(.date)`.  That feels like a natural way to call this function.
-  ind <- rlang::ensym(.val)
-  dep <- rlang::ensym(.y)
+  dep <- rlang::ensym(.val)
+  ind <- rlang::ensym(.y)
   col <- rlang::enexpr(.grp)
 
   # Check if the grouping variable is a factor or at least character vector
@@ -61,7 +67,15 @@ ptlines <- function(.dt, .val, .y, .grp, ...) {
   grp <-  rlang::eval_tidy(col, .dt)
   if (! methods::is(grp, 'factor') & ! is.character(grp))
     stop('Grouping variable must be a factor or character vector.')
-
+  #browser()
+  # We construct a local data frame so we can reorder if .sort == TRUE
+  df <- tibble::tibble(ind = rlang::eval_tidy(ind, .dt),
+                       dep = rlang::eval_tidy(dep, .dt),
+                       grp = grp)
+  if (.sort) {
+    df <- df %>%
+      dplyr::arrange(ind)
+  }
 
   # Should we check that these are data names from the data frame?
   # The check is not strictly necessary, as other errors will be triggered if we
@@ -71,10 +85,7 @@ ptlines <- function(.dt, .val, .y, .grp, ...) {
   # the user is passing data assembled outside of the dataframe for one or more
   # of the parameters.  Should we be checking lengths and types instead?
 
-  ggplot(data = NULL, aes(rlang::eval_tidy(ind, .dt),
-                          rlang::eval_tidy(dep, .dt),
-                          color = grp
-  )) +
+  ggplot(data = df, aes(dep, ind, color = grp)) +
     geom_path(...) +
     labs(x = rlang::as_string(ind), y = rlang::as_string(dep),
                   color = rlang::as_string(col)) +
@@ -85,7 +96,7 @@ ptlines <- function(.dt, .val, .y, .grp, ...) {
 
 #' Draw repeated profile data as dots
 #'
-#' Build a "depth down" `ggplot2` point graphic for repeated depth
+#' Build a "depth down" `ggplot` point graphic for repeated depth
 #' profile data.
 #'
 #' Create a graphic that draws vertical profile data across multiple dates or
@@ -94,7 +105,7 @@ ptlines <- function(.dt, .val, .y, .grp, ...) {
 #' (usually date or time) by y (usually depth, reversed) layout.  By default,
 #' dots are symbolized by color to depict measured values.
 #'
-#' The function's first parameter is a data frame, and it produces a `ggplot2`
+#' The function's first parameter is a data frame, and it produces a `ggplot`
 #' plot object, so can be integrated into `ggplot2` and`tidyverse` work flows.
 #'
 #' Default colors from `ggplot2` are seldom optimal.  Users will usually want to

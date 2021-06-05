@@ -141,7 +141,6 @@ interpol <- function(.x, .y, .grid,
   }
 }
 
-
 #' @describeIn interpol Interpolation based on resolution.
 #'   `interpol_res()` is specialized for creating interpolated values at
 #'   regularly spaced intervals. It includes some optional parameters that

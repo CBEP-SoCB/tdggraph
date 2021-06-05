@@ -1,5 +1,5 @@
 ---
-title: "Demos of Major `tdggaph` Functions"
+title: "Drawing profile graphics for limnology and oceanography"
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{tdggraph_demo}
@@ -10,85 +10,263 @@ vignette: >
 ```{r, include = FALSE}
 knitr::opts_chunk$set(
   fig.align = 'center',
-  fig.width = 5, 
-  fig.height = 4,
+  fig.width = 4, 
+  fig.height = 3,
   collapse = TRUE,
   comment = "#>"
 )
 ```
 
+# Introduction
+"Profile" data is common in both limnology and oceanography.  Profile data 
+is data where some sort of water quality (or more rarely, biological) parameter
+is measured from the water surface to depth. Often, profile data is collected
+at regular intervals at the same location, producing a three dimensional 
+(time by depth by value) data set.
 
-# Setup 
-The pseudo package "tidyverse" does not work in CMD check, since during
-the checks, only packages explicitly included in the DESCRIPTION file are
-loaded.  Here we load each package individually.
+Common examples of time by depth data include salinity, temperature and
+dissolved oxygen profiles, but the idea applies whenever a parameter is
+collected more or less simultaneously along a vertical line.
+
+The goal of this package is to provide a simple interface to ggplot graphics,
+with intelligent defaults to generate plots useful for this type of data.  
+In particular, profile data is usually  drawn with a reversed vertical (depth) 
+axis, so that the surface (zero depth) is at the top of the figure, with depth 
+increasing towards the bottom of the figure. Similarly, it is common to show 
+zero depth on the plot, even though data collection starts at some finite
+depth below the water surface.
+
+The `tdggraph` package is principally designed to produce graphics from 
+season-long series of periodic profile observations. The three main graphics 
+functions create `ggplot2` graphic objects with different strengths for 
+emphasizing different aspects of the data.
+
+# Dependencies 
+We load several "tidyverse"  package individually here, to minimize
+unnecessary dependencies in the package.  Users can usually load them in one 
+step with `library(tidyverse)`.  
 ```{r setup}
 library(dplyr)
 library(tidyr)
 library(purrr)
 library(forcats)
 library(ggplot2)
+
 library(tdggraph)
-data(dep_sonde)
 ```
+
+# Load Example Data
+We also create a factor version of the date to simplify examples.
+```{r}
+data(dep_sonde) 
+
+dep_sonde <- dep_sonde %>%
+  mutate(txt_date = format(sample_date, format = '%m/%d'),
+         txt_date = factor(txt_date),
+         txt_date = fct_reorder(txt_date, sample_date))
+```
+
+# `tdggraph` Principles
+## Integration with `tidyverse` and `ggplot`
+The functions in `tdggraph` are designed to integrate well with ggplot and dplyr 
+work flows.  
+
+The first argument to each plotting function is a source data frame.  They can
+therefore be integrated into a `magrittr` pipe, like the `ggplot()`  All
+graphic functions use data masking, so they will  look for data passed as 
+function arguments within that data frame, before looking in the enclosing 
+environment.  Variable names in the source data frame can therefore "mask" 
+the same variable name from the enclosing environment.  This style of function
+argument will be familiar to users of `ggplot()` and the tidyverse.
+
+The output of each plotting function is of class `ggplot`, so users can add
+additional graphic components to the plot as usual, adding layers, modifying 
+themes, changing axis labels, altering color schemes, transforming axes, and 
+more. 
+
+The default reversal of the Y axis can be "undone" by adding 
+`scale_y_continuous()` to the function output.  this will generate a warning,
+but the Y axis will be returned to "normal" with higher values towards the top 
+of the figure.
+
+Users can pass additional aesthetic specifications as part of the 
+call to any of these functions. Any additional arguments passed to these 
+functions are passed directly to the underlying `ggplot2` geoms, allowing 
+users to override aesthetic defaults, most of which are inherited from 
+`ggplot()`. Additional arguments are passed to geoms as follows:
+
+*  `ptlines()`  -> `geom_path()`  
+*  `ptdots()`   -> `geom_dots()`  
+*  `ptsmooth()` -> `geom_tile()`  
+
+Passing a data dependent aesthetic specification using `aes()` requires some
+special handling. Data masking does not work within the supplementary call to
+`aes()`, so users must pass arguments to `aes()` that refer to objects defined 
+in the enclosing environment.  Usually, this just requires an explicit reference
+to the source data frame (e.g., `df$value`, not just `value`). See the example 
+in the `ptdots()` "Filled Symbols" demo for an example.
+
+## All Data From the Enclosing Environment
+If all data is available in the enclosing environment, you can pass NULL as the 
+data frame parameter.  This is sometimes helpful if you are using the functions 
+inside another function, where you may not want to assemble a data frame.
+
+## Order of Arguments
+In the current version of the package, all plotting functions take arguments in
+order of their role in the plot. The order follows the **graphical** logic of 
+the plot, not the **scientific** logic. This is a potential source of errors and
+frustration, so it's worth explaining.
+
+The order of the arguments for the plot functions is always:  
+*  data source;  
+*  variable that defines x location;  
+*  variable that defines y location;  
+*  variable that defines color. 
+
+From the scientific perspective, all these plots show depth, time, and a 
+measured environmental variable. Those roles do not change, but the way they are
+depicted on a plot does.
+
+The formal arguments for `ptlines()` are as follows:
+```{r eval = FALSE}
+ptlines(.dt, .val, .y, .grp,.sort = TRUE, ...)
+```
+Note that in this type of plot the x coordinate reflects the value of the 
+data you are showing, so it comes **first**.  The grouping variable defines
+the color, so it comes **last**.
+
+The first few formal arguments for `ptdots()` and `ptsmooth()` are similar to
+each other:
+```{r eval = FALSE}
+ptdots(.dt, .x, .y, .val, ...)
+
+ptsmooth(.dt, .x, .y, .val,
+  .res_x = 0.5, .res_y = 2, 
+  y_grow_grid = TRUE, y_with_zero = TRUE
+)
+```
+
+The data source comes first, then the x coordinate (usually a time coordinate),
+then the y coordinate (usually depth) then the value that defines the color 
+(the measured environmental variable).
+
+
 
 # `ptlines()` Demo
 the `ptlines()` function generates a line graph with vertical profiles shown as 
 lines.  Different profiles are distinguished by color.  This is an excellent
-format to show differences in profiles between a relatively modest number of samples, as viewers  can easily compare profiles against each other.
+format to show subtle differences in profiles between a relatively modest number
+of samples, as viewers  can easily compare profiles against each other.  It is
+not as good if there are many samples, as a large number of lines begins to look 
+like spaghetti.
+
+This function can also be used to plot profile data from multiple sites, as the 
+logic of the plot works with qualitative, not quantitative grouping variables.
 
 Data is preferentially found inside the data frame passed as the first argument.
 Arguments are in the order of x coordinate -- here a **value** , y coordinate --
 usually the depth -- and a grouping variable -- often a date or a location.  The
-grouping variable should evaluate to a factor of character vector, as it will
+grouping variable should evaluate to a factor or character vector, as it will
 always be used to divide data into separate profiles.
 ```{r}
-ptlines(dep_sonde, temp, depth, month) +
-  theme_minimal()
+ptlines(dep_sonde, temp, depth, txt_date, .sort = FALSE)
 ```
 
-## Data From the Enclosing Environment
-If all data is available in the enclosing environment, you can pass NULL as the data frame parameter.  This is helpful if yo uare using the functions inside 
-another function, where you may not want to assemble a data frame.
+## Integration with `tidyverse` and `ggplot`
+The function is designed to fit into  a typical tidyverse work flow, for example, 
+you can feed data into it via  a pipe, and add components to the resulting 
+ggplot object:
 ```{r}
-m <- dep_sonde$month
-d = dep_sonde$depth
-ox = dep_sonde$do
-
-ptlines(NULL, ox, d, m) +
-  theme_minimal()
-```
-
-## Integration with `tidyverse` and `ggplot
-The functions are designed to integrate well with ggplot and dplyr work flows.
-Note that you can pass additional aesthetic specifications as part of the call
-to `ptlines().  They will be passed on to `geom_path()` internally.
-
-Passing the name of a vector in the data frame into a supplementary
-`mapping = aes()` call does yet not work.  Any supplementary aesthetics
-defined in `mapping = aes()` must refer to names from the enclosing
-environment.  See the example in the `ptdots()` demo for using filled symbols 
-for an example.
-```{r}
-dep_sonde%>%
-  arrange(sample_date, depth) %>% 
-  mutate(txt_date = format(sample_date, format = '%m/%d'),
-         txt_date = factor(txt_date),
-         txt_date = fct_reorder(txt_date, sample_date)) %>%
-
-ptlines(temp, depth, txt_date, size = 1.5, lty = 2) +
+ptlines(dep_sonde, do, depth, txt_date, size = 1.5, lty = 2) +
   theme_minimal() +
   scale_color_brewer(type = 'qual', name = '') +
   ylab('Depth (m)') +
-  xlab('')
+  xlab('Dissolved Oxygen (mg/l)')
+```
+
+Any supplementary aesthetics defined in `mapping = aes()` must refer to names 
+from the enclosing environment.  See the example in the `ptdots()` "Filled 
+Symbols" demo for an example.
+
+## Data From the Enclosing Environment
+If all data is available in the enclosing environment, you can pass NULL as the 
+data frame parameter.  This is helpful if you are using the functions inside 
+another function, where you may not want to assemble a data frame.
+```{r}
+td <- dep_sonde$txt_date
+d = dep_sonde$depth
+ox = dep_sonde$do
+
+ptlines(NULL, ox, d, td, .sort = FALSE) +
+  theme_minimal()
+```
+
+## Data Order Matters
+Under the hood this function uses `geom_path()` and not `geom_line()`, so
+the order of the data matters. `geom_path()` connects points in the order of
+their occurrence in the source data, while geom_line() internally orders data
+according to the x coordinate before plotting.
+
+The DEP sonde data is already sorted by date and depth, whcih is why we were
+able to ignore this detail up until now.  We demonstrate what happens by 
+desorting the data we just plotted. By sorting each component of the data to the 
+same random order, we ensure we are plotting the same data (x,y,z) triplets, 
+only they are presented in a new random order.
+
+You get spaghetti:
+```{r}
+rand_order <- order(rnorm(length(td)))
+td2 <- td[rand_order]
+d2 <- d[rand_order]
+ox2 <- ox[rand_order]
+ptlines(NULL, ox2, d2, td2, .sort = FALSE) +
+  theme_minimal()
+```
+
+### The `.sort` Argument
+
+it is often going to be a good practice to sort your data yourself before
+passing it to this function, but if you're in a hurry, there's a shortcut that 
+does the job for you.  You  control this behavior with the `.sort'
+parameter, which is TRUE by default.  But be forwarned results may not quite
+be what you expected or hoped for.
+```{r}
+ptlines(NULL, ox2, d2, td2, .sort = TRUE) +
+  theme_minimal()
+```
+
+## Passing a Grouping Variable
+Sometimes this gets tricky.  For example, suppose you want to symbolize
+the data by month, not by date. You have multiple sampling dates within some
+months.  By default, `geom_path()` will connect all the dots in the order of
+the source data or the data sorted by depth.so neither `.sort = TRUE` or 
+`.sort = FALSE` works quite as expected:
+
+With `.sort = TRUE`, you get zigzags:
+```{r}
+ptlines(dep_sonde, temp, depth, month, .sort = TRUE)
+```
+With `.sort = FALSE`, things look better, because the source data was already 
+sorted, but you get unneccesary connecting lines from the bottom of one profile 
+to the tope of the next.
+```{r}
+ptlines(dep_sonde, temp, depth, month, .sort = FALSE)
+```
+
+The solution is to pass a grouping variable. Note: this behaves strangely with 
+`.sort = TRUE`, so you should sort your data before passing it to `ptlines()`.
+```{r fig.height = 3, fig,width = 4}
+ptlines(dep_sonde, temp, depth, month,  .sort = FALSE,
+        mapping = aes(group = dep_sonde$txt_date))
 ```
 
 # `ptdots()` Demo
 The dots provide an alternative way of depicting similar data.  Here, the
 graphic emphasizes dates over the course of a season, at the expense
-of making subtle differences in profiles more difficult to assess.  Default colors from `ggplot2` are often a poor choice here. 
+of making subtle differences in profiles more difficult to assess.  Default 
+colors from `ggplot2` are often a poor choice here. 
 ```{r}
-ptdots(dep_sonde, month, depth, do, size = 5) +
+ptdots(dep_sonde, sample_date, depth, do, size = 5) +
   theme_minimal() +
   scale_color_gradient2(name = 'Oxygen, (mg/l)',
                         high = scales::muted("blue"), 
@@ -98,21 +276,18 @@ ptdots(dep_sonde, month, depth, do, size = 5) +
 ```
 
 ## Data from the enclosing environment
-We can pass NULL as a data frame parameter if all data is available in the 
-enclosing environment.
+As before, we can pass NULL as a data frame parameter if all data is available
+in the enclosing environment.
 ```{r}
-ptdots(NULL, m, d, ox, size = 5) +
+sd <- dep_sonde$sample_date
+ptdots(NULL, sd, d, ox, size = 5) +
   theme_minimal()
 ```
 
 ## Filled Symbols
-Passing the name of a vector in the data frame into a supplementary
-`mapping = aes()` call does yet not work.  Any supplementary aesthetics
-defined in `mapping = aes()` must refer to names from the enclosing
-environment.
-
-As a result, using  filled point symbols. (R point shapes 21 through 25) takes
-several additional steps:
+Any supplementary aesthetics defined in `mapping = aes()` must refer to names 
+from the enclosing environment. As a result, using  filled point symbols. (R 
+point shapes 21 through 25) takes several additional steps:
 
 1. Add `mapping = aes(fill = ?)` to the function call, pointing 
    to data in the enclosing environment, usually by qualifying the name of 
@@ -122,16 +297,16 @@ several additional steps:
   
 3. Usually, pass a `color` argument to define the fixed dot outline color.
    (`color = 'gray50'` is often a good starting point).  If you don't specify
-   a single color, the outline color will still vary,  which is probably not 
-   what you want. 
+   a single color, to override the normal color aesthetic, the outline color 
+   will vary,  which is probably not what you want. 
 
 4. Usually, you will want to supplement the call to this function with a 
    call to `scale_fill_viridis_c()`, `scale_fill_distiller()`, or 
-   `scale_fill_continuous()` to define a fill color scale that works better than
-   the `ggplot2` default.
+   `scale_fill_continuous()` or `scale_fill_gradient()` etc. to define a fill 
+   color scale that works better than the `ggplot2` default.
 
 ```{r}
-ptdots(dep_sonde, month, depth, do, size = 3, 
+ptdots(dep_sonde, sample_date, depth, do, size = 3, 
        shape = 22, color = 'gray25',
        mapping = aes(fill = dep_sonde$do)) +
   theme_minimal() +
@@ -142,10 +317,36 @@ ptdots(dep_sonde, month, depth, do, size = 3,
   ylab('Depth (m)')
 ```
 
+#`ptsmooth()` demo
+This function produces a two dimensional interpolation plot. it can be thought of 
+as a smoothed out version of `ptdots()`. It is especially useful for 
+"eyeballing" seasonal patterns from periodic data. As before, default colors 
+are seldom the most informative.
+```{r}
+data(dep_sonde)
+plt <- ptsmooth(dep_sonde, sample_date, depth, temp, 
+         .res_x = 1, .res_y = .25, 
+         y_grow_grid = TRUE,
+         y_with_zero = TRUE) +
+scale_fill_gradient(name = 'Oxygen, (mg/l)',
+                        high = scales::muted("blue"), 
+                        low = scales::muted("red", l = 40))
+plt
+```
+
+It is easy to overlay the locations of the original observations if you want to
+show viewers where you have actual observations
+```{r}
+plt +
+  geom_point(mapping = aes(sample_date, depth), data = dep_sonde,
+             shape = 21, size = 3, fill = NA)
+```
+
 # `interpol()` Demo
-This function is a thin wrapper around base R's `approx()` function, which implements simple linear interpolation.  The major difference is that the return value of 
-`interpol()` is a data frame, not a list.  The function is used "under the hood"
-to generate graphics interpolated in two directions without clipping.
+This function is a thin wrapper around base R's `approx()` function, which 
+implements simple linear interpolation.  The major difference is that the return 
+value of `interpol()` is a data frame, not a list.  The function is used "under
+the hood" to generate graphics interpolated in two directions without clipping.
 
 The basic idea for this function and its use in generating smoothed graphics for
 profile data  were inspired by Dewey Dunnington's 
@@ -154,7 +355,7 @@ fishandwhistle.net [blog](https://fishandwhistle.net/post/2019/depth-time-heatma
 ## By Depths / Numeric Values
 ```{r}
 dat <- dep_sonde[dep_sonde$month == 'Jul',]
-grid <- seq(0, 14, 1)
+grid <- seq(0, 14, 0.75)
 interp <- interpol(dat$depth, dat$temp, .grid = grid)
 
 ggplot(dat, aes(temp, depth)) +
@@ -217,11 +418,24 @@ ggplot(profs, mapping = aes(x = do, y = depth)) +
   geom_point(data = dep_sonde, mapping = aes(x = do, y = depth))
 ```
 
+## Passing an Empty Dataframe
+Should return a data frame with NA in second variable.  This is useful for use
+in functional programming, since it correctly propagates missing values.
+```{r}
+t <- unique(dep_sonde$sample_date) %>%
+  sort
+df <- tibble(x = t, y = NA_integer_)
+interp <- interpol(df$x, df$y, .grid = grid, with_zero = FALSE, 
+                   grow_grid = FALSE, na.rm = TRUE)
+head(interp)
+```
+
 # `interpol_res()` Demo
 `interpol_res()` is an only slightly more consequential extension of base R's
 `approx()` function.  It's primary claim to fame is that it allows the user to
-specify a resolution for evenly spaced interpolations.  Like `interpol()`,
-it outputs a dataframe, not a list.
+specify a resolution for evenly spaced interpolations. (`approx()` allows you to
+specify the number of interpolated points, but not their spacing).   Like 
+`interpol()`, it outputs a dataframe, not a list.
 
 ## By Depths / Numeric Values
 ```{r}
@@ -252,28 +466,27 @@ ggplot(tmp, aes(temp, sample_date)) +
   ggtitle('Fore River Site 09, July 2018')
 ```
 
-## Passing an Empty Dataframe
-Should return a data frame with NA in second variable.
-```{r}
-t <- unique(dep_sonde$sample_date) %>%
-  sort
-df <- tibble(x = t, y = NA_integer_)
-interp <- interpol_res(df$x, df$y, .res = 2, with_zero = FALSE, na.rm = TRUE)
-head(interp)
+
+# Gotchas
+## Altering teh Vertical Scale on a "Reversed" Y Axis
+Since the functions already define a "reversed" y axis, you need to be explicit
+altering the y axis again. Sometimes this leads to unexpected results.
+
+For example, when you alter the limits of the y axis, you need to provide 
+the scale limits in reversed order (the way they are plotted). This is true 
+both for `scale_y_reversed()` and for `coord_cartesian()`.  Note that these two 
+commands do not quite generate identical plots, as `coord_cartesian()` will not
+prune data.
+
+```{r fig.height = 2, fig.width = 3}
+plt <- ptdots(dep_sonde, sample_date, depth, do, size = 3)
+
+plt + scale_y_reverse(limits = c(10, 0))
+
+plt + coord_cartesian(ylim = c(10,0))
 ```
 
-#`ptsmooth()` demo
-```{r}
-data(dep_sonde)
-ptsmooth(dep_sonde, sample_date, depth, temp, 
-         .res_x = 1, .res_y = .25, 
-         y_grow_grid = TRUE,
-         y_with_zero = TRUE) +
-scale_fill_gradient2(name = 'Oxygen, (mg/l)',
-                        low = scales::muted("blue"), 
-                        high = scales::muted("red"),
-                        mid = 'gray95',
-                        midpoint = 15)
-  
-```
+# Known Problems
+## Functions Do Not Work with `facet_wrap()`
+
 

@@ -4,7 +4,7 @@
 \alias{ptlines}
 \title{Draw depth profiles as lines}
 \usage{
-ptlines(.dt, .val, .y, .grp, ...)
+ptlines(.dt, .val, .y, .grp, .sort = TRUE, ...)
 }
 \arguments{
 \item{.dt}{Data frame containing data to plot. Can be NULL, if all data
@@ -21,6 +21,10 @@ of a numeric vector in source data frame (unquoted or quoted)}
 \item{.grp}{Factor or character vector, name of a factor or character vector
 in the source data frame, or an expression that evaluates (with data
 masking) to a character or factor vector.  Usually a date.}
+
+\item{.sort}{TRUE / FALSE.  Should data be sorted by .y variable before
+plotting?  This is almost always what you want to generate clean
+traces for each profile.}
 
 \item{...}{Other arguments to pass to \code{geom_path()}.  Likely to include
 additional aesthetics.  To pass additional aesthetic mappings, use
