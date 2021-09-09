@@ -87,7 +87,7 @@ interpol <- function(.x, .y, .grid,
     nm = names(.x)
     stop('interpol: NAs not permitted in the independent variable. ',
          'Remove NAs from ',
-         dplyr::if_else(nchar(nm) > 0, nm, 'the independent variable'),
+         ifelse(nchar(nm) > 0, nm, 'the independent variable'),
          ' and try again.' )
   }
 
@@ -192,7 +192,7 @@ interpol_res <- function(.x, .y, .res,
     nm = names(.x)
     stop('interpol_res: NAs not permitted in the independent variable. ',
          'Remove NAs from ',
-         dplyr::if_else(nchar(nm) > 0, nm, 'the independent variable'),
+         ifelse(nchar(nm) > 0, nm, 'the independent variable'),
          ' and try again.' )
   }
 

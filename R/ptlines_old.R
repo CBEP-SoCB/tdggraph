@@ -1,3 +1,4 @@
+
 #' Draw depth profiles as lines
 #'
 #' Build a conventional "depth down" `ggplot2` line graphic for repeated depth
@@ -39,13 +40,13 @@
 #'                 month = factor(rep(c(6,7,8),each = 10),
 #'                                  labels = c('Jun', 'Jul', 'Aug')),
 #'                 val = (depth+50)/5 - 5 + rnorm(30, 0, 0.25))
-#' ptlines(df, val, depth, month) +
+#' ptlines_old(df, val, depth, month) +
 #'   theme_minimal()
-ptlines <- function(.dt, .val, .y, .grp, .sort = TRUE, ...) {
+ptlines_old <- function(.dt, .val, .y, .grp, .sort = TRUE, ...) {
 
   # Ugly argument check, since it doesn't provide nice error message.
   stopifnot(is.data.frame(.dt) | is.null(.dt))
-  #browser()
+
   #todo: Add further data conformity error checks to facilitate testing
   #todo: add optional .grp grouping variable that allows data masking
   #todo: Figure out how to make function output work with facets
@@ -56,28 +57,24 @@ ptlines <- function(.dt, .val, .y, .grp, .sort = TRUE, ...) {
   # `ensym()`  captures only names, not expressions.  We are testing the use
   # of `enexpr()` for the color factor to allow use of structures like
   # `factor(.date)`.  That feels like a natural way to call this function.
-  .val <- rlang::ensym(.val)
-  .y <- rlang::ensym(.y)
-  .grp <- rlang::enexpr(.grp)
-
-  #print(rlang::as_string(.val))
-  #print(rlang::as_string(.y))
-  #print(rlang::as_string(.grp))
+  dep <- rlang::ensym(.val)
+  ind <- rlang::ensym(.y)
+  col <- rlang::enexpr(.grp)
 
   # Check if the grouping variable is a factor or at least character vector
   # Non-factor variables could be handled inside the function
   # by adding a grouping variable, but it is better to be explicit.
-  grp <-  rlang::eval_tidy(.grp, .dt)
+  grp <-  rlang::eval_tidy(col, .dt)
   if (! methods::is(grp, 'factor') & ! is.character(grp))
     stop('Grouping variable must be a factor or character vector.')
-
-
+  #browser()
+  # We construct a local data frame so we can reorder if .sort == TRUE
+  df <- tibble::tibble(ind = rlang::eval_tidy(ind, .dt),
+                       dep = rlang::eval_tidy(dep, .dt),
+                       grp = grp)
   if (.sort) {
-    df <- .dt %>%
-      dplyr::arrange(rlang::eval_tidy(.y, .dt))
-  }
-  else {
-    df <- .dt
+    df <- df %>%
+      dplyr::arrange(ind)
   }
 
   # Should we check that these are data names from the data frame?
@@ -88,12 +85,14 @@ ptlines <- function(.dt, .val, .y, .grp, .sort = TRUE, ...) {
   # the user is passing data assembled outside of the dataframe for one or more
   # of the parameters.  Should we be checking lengths and types instead?
 
-  ggplot(data = df, aes(!!.val, !!.y, col = !!.grp)) +
+  ggplot(data = df, aes(dep, ind, color = grp)) +
     geom_path(...) +
-    labs(x = rlang::as_string(.y), y = rlang::as_string(.val),
-         color = rlang::as_string(.grp)) +
+    labs(x = rlang::as_string(ind), y = rlang::as_string(dep),
+                  color = rlang::as_string(col)) +
     scale_y_reverse()
 }
+
+
 
 #' Draw repeated profile data as dots
 #'
@@ -164,16 +163,16 @@ ptlines <- function(.dt, .val, .y, .grp, .sort = TRUE, ...) {
 #'                                  labels = c('Jun', 'Jul', 'Aug')),
 #'                 val = (depth+50)/5 - 5 + rnorm(30, 0, 0.25))
 #' # Normal use
-#' ptdots(df, month, depth, val) +
+#' ptdots_old(df, month, depth, val) +
 #'   theme_minimal()
 #'
 #' # Filled Symbols
-#' ptdots(dep_sonde, month, depth, do, size = 5,
+#' ptdots_old(dep_sonde, month, depth, do, size = 5,
 #'       shape = 21, color = 'gray25',
 #'      mapping = aes(fill = dep_sonde$do)) +
 #'  theme_minimal()
 #'
-ptdots <- function(.dt, .x, .y, .val, ...) {
+ptdots_old <- function(.dt, .x, .y, .val, ...) {
 
   # Ugly argument check, since it doesn't provide nice error message.
   stopifnot(is.data.frame(.dt) | is.null(.dt))
@@ -185,7 +184,7 @@ ptdots <- function(.dt, .x, .y, .val, ...) {
   col <- rlang::ensym(.val)
 
   ggplot(
-    data = .dt,
+    data = NULL,
     aes(
       x = rlang::eval_tidy(ind, .dt),
       y = rlang::eval_tidy(dep, .dt),
@@ -198,4 +197,3 @@ ptdots <- function(.dt, .x, .y, .val, ...) {
          color = rlang::as_string(col)) +
     scale_y_reverse()
 }
-

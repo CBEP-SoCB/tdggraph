@@ -1,5 +1,5 @@
 ---
-title: "Drawing profile graphics for limnology and oceanography"
+title: "Drawing Profile Graphics for Limnology and Oceanography"
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{tdggraph_demo}
@@ -150,8 +150,6 @@ The data source comes first, then the x coordinate (usually a time coordinate),
 then the y coordinate (usually depth) then the value that defines the color 
 (the measured environmental variable).
 
-
-
 # `ptlines()` Demo
 the `ptlines()` function generates a line graph with vertical profiles shown as 
 lines.  Different profiles are distinguished by color.  This is an excellent
@@ -197,8 +195,7 @@ td <- dep_sonde$txt_date
 d = dep_sonde$depth
 ox = dep_sonde$do
 
-ptlines(NULL, ox, d, td, .sort = FALSE) +
-  theme_minimal()
+ptlines(NULL, ox, d, td, .sort = FALSE)
 ```
 
 ## Data Order Matters
@@ -207,9 +204,9 @@ the order of the data matters. `geom_path()` connects points in the order of
 their occurrence in the source data, while geom_line() internally orders data
 according to the x coordinate before plotting.
 
-The DEP sonde data is already sorted by date and depth, whcih is why we were
+The DEP sonde data is already sorted by date and depth, which is why we were
 able to ignore this detail up until now.  We demonstrate what happens by 
-desorting the data we just plotted. By sorting each component of the data to the 
+resorting the data we just plotted. By sorting each component of the data to the 
 same random order, we ensure we are plotting the same data (x,y,z) triplets, 
 only they are presented in a new random order.
 
@@ -219,36 +216,35 @@ rand_order <- order(rnorm(length(td)))
 td2 <- td[rand_order]
 d2 <- d[rand_order]
 ox2 <- ox[rand_order]
-ptlines(NULL, ox2, d2, td2, .sort = FALSE) +
-  theme_minimal()
+ptlines(NULL, ox2, d2, td2, .sort = FALSE)
 ```
 
 ### The `.sort` Argument
-
-it is often going to be a good practice to sort your data yourself before
+it is a good practice to sort your data yourself before
 passing it to this function, but if you're in a hurry, there's a shortcut that 
 does the job for you.  You  control this behavior with the `.sort'
-parameter, which is TRUE by default.  But be forwarned results may not quite
+parameter, which is TRUE by default.  But be forwarned: results may not quite
 be what you expected or hoped for.
 ```{r}
 ptlines(NULL, ox2, d2, td2, .sort = TRUE) +
   theme_minimal()
 ```
 
-## Passing a Grouping Variable
+### Passing a Grouping Variable
 Sometimes this gets tricky.  For example, suppose you want to symbolize
 the data by month, not by date. You have multiple sampling dates within some
 months.  By default, `geom_path()` will connect all the dots in the order of
-the source data or the data sorted by depth.so neither `.sort = TRUE` or 
+the source data or the data sorted by depth, so neither `.sort = TRUE` or 
 `.sort = FALSE` works quite as expected:
 
 With `.sort = TRUE`, you get zigzags:
 ```{r}
 ptlines(dep_sonde, temp, depth, month, .sort = TRUE)
 ```
+
 With `.sort = FALSE`, things look better, because the source data was already 
-sorted, but you get unneccesary connecting lines from the bottom of one profile 
-to the tope of the next.
+sorted, but you get unnecessary connecting lines from the bottom of one profile 
+to the top of the next.
 ```{r}
 ptlines(dep_sonde, temp, depth, month, .sort = FALSE)
 ```
@@ -275,7 +271,7 @@ ptdots(dep_sonde, sample_date, depth, do, size = 5) +
                         midpoint = 9)
 ```
 
-## Data from the enclosing environment
+## Data from the Enclosing Environment
 As before, we can pass NULL as a data frame parameter if all data is available
 in the enclosing environment.
 ```{r}
@@ -387,8 +383,8 @@ ggplot(tmp, aes(temp, sample_date)) +
 
 ### Functional Programming
 `interpol() includes an optional `.name` argument, which can be useful when
-assembling larger data frames through workign with nested tibbles or functional
-programming.  For example,  one might often want to interpolate within dates,
+assembling larger data frames through working with nested tibbles or functional
+programming.  For example, one might often want to interpolate within dates,
 not between dates.
 
 We calculate a grid to use for each date, then use a nested tibble to
@@ -436,7 +432,7 @@ head(interp)
 `approx()` function.  It's primary claim to fame is that it allows the user to
 specify a resolution for evenly spaced interpolations. (`approx()` allows you to
 specify the number of interpolated points, but not their spacing).   Like 
-`interpol()`, it outputs a dataframe, not a list.
+`interpol()`, it outputs a data frame, not a list.
 
 ## By Depths / Numeric Values
 ```{r}
@@ -467,9 +463,8 @@ ggplot(tmp, aes(temp, sample_date)) +
   ggtitle('Fore River Site 09, July 2018')
 ```
 
-
 # Gotchas
-## Altering teh Vertical Scale on a "Reversed" Y Axis
+## Altering the Vertical Scale on a "Reversed" Y Axis
 Since the functions already define a "reversed" y axis, you need to be explicit
 altering the y axis again. Sometimes this leads to unexpected results.
 
@@ -488,6 +483,49 @@ plt + coord_cartesian(ylim = c(10,0))
 ```
 
 # Known Problems
-## Functions Do Not Work with `facet_wrap()`
+## Functions Do Not Work with `facet_wrap()` or `facet_grid()`
+Because of some initial programming choices, none of the functions currently 
+pass the source data frame to the ggplot geoms internally. This 
+underlies some of the quirks of using the functions that have already been
+described. However, it also means the functions can not be used with facets, 
+even though it is natural to want to do so.
 
+# Create "Long Form" Data
+We create a selected data set to show what happens with each of the functions
+```{r}
+dep_long <- dep_sonde %>%
+  select(-ph, -chl_a_sonde, -turbidity, -turbidity_cens) %>%
+  pivot_longer(temp:do, names_to = 'parameter', values_to = 'value')
+```
 
+# Example with `ptlines()`
+It is easy to generate a faceted graphic like our `ptlines()` function output
+by hand:
+```{r}
+tmp <- dep_long %>%
+  mutate(dates = factor(sample_date)) %>%
+  arrange(sample_date, depth)
+
+plt <- ggplot(tmp, aes(x = value, y = depth, color = dates)) +
+  geom_path()
+plt + 
+  facet_wrap(~parameter, scales = 'free_x') +
+  scale_y_reverse()
+```
+But we can't if we try to do it directly.  Similar problems arise with 
+`ptdots()` and `ptsmooth()`
+```{r}
+plt <- ptlines(tmp,  value,  depth, dates,
+              mapping = aes(lty = dep_long$parameter))
+plt
+```
+
+```{r error = TRUE}
+plt + facet_wrap(~parameter)
+```
+
+This is going to be difficult to solve for `ptsmooth()`, since we are not
+actually plotting the original dataframe, but a derived one.  That will
+probably require developing an new geom following ideas in "Extending ggplot"
+https://cran.r-project.org/web/packages/ggplot2/vignettes/extending-ggplot2.html.
+WE are actively seaking solutions for the other two functions.

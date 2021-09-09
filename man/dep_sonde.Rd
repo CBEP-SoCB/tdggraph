@@ -55,14 +55,17 @@ data(dep_sonde)
 \description{
 A dataset containing vertical profile data collected by automated water
 quality sonde by Maine's Department of Environmental Protection staff.  Data
-has been filtered down to only include data from one site and one year. The
-site and year may change between versions of this package.
+has been filtered down to only include data from one site and one year.
+Currently, the data is from Site "FR09", just outside the mouth of the Fore
+River, from 2018.  The site and year may change between versions of this
+package.
 }
 \details{
-Data includes temperature, salinity, dissolved oxygen, pH, and sometimes
-(depending on the year and site) chlorophyll a and turbidity readings.
-Data was collected by lowering automated water quality sensor apparatus from
-a boat.  As the device is lowered, it periodically collects data on depth
-and water quality parameters.
+Data includes temperature, salinity, dissolved oxygen, pH, chlorophyll A and
+turbidity. Data was collected by lowering automated water quality sensor
+apparatus from a boat.  As the device is lowered, it periodically collects
+data on depth and water quality parameters.  Lack of discrete samples to
+calibrate optical estimates of chlorophyll A mean the chlorophyll data
+should be treated as provisional.
 }
 \keyword{datasets}
